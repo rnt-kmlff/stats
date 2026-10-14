@@ -1,0 +1,69 @@
+name: Fork baseline build
+
+on:
+  push:
+    branches: [codex/baseline-v3.0.21]
+    paths:
+      - .github/workflows/fork-baseline.yml
+      - docs/development/BASELINE_BUILD_REVIEW.md
+      - AGENTS.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-baseline-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  baseline:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Verify unchanged upstream application source
+        run: |
+          git fetch --no-tags origin ac791a10a53b0457a467e7ee341b512ad9413e03
+          git diff --exit-code ac791a10a53b0457a467e7ee341b512ad9413e03 HEAD -- . ':!.github/workflows/fork-baseline.yml' ':!docs/development/BASELINE_BUILD_REVIEW.md' ':!AGENTS.md'
+          git rev-parse HEAD
+          xcodebuild -version
+
+      - name: Run upstream mocked hardware and helper tests
+        run: python3 Kit/scripts/run-smc-tests.py
+
+      - name: Build arm64 baseline without developer credentials
+        run: |
+          xcodebuild -project Stats.xcodeproj -scheme Stats -configuration Release -destination 'generic/platform=macOS' -derivedDataPath build/DerivedData -jobs 2 ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build > build-output.log 2>&1 || { tail -n 100 build-output.log; exit 1; }
+          tail -n 20 build-output.log
+
+      - name: Package and verify local development artifact
+        run: |
+          set -euo pipefail
+          APP=build/DerivedData/Build/Products/Release/Stats.app
+          test -d "$APP"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")" = 3.0.21
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+          mkdir -p baseline-artifact
+          ditto "$APP" baseline-artifact/Stats.app
+          cp LICENSE baseline-artifact/LICENSE
+          python3 - <<'PYREC'
+          import json, os, subprocess, pathlib
+          receipt = {"upstream_revision": "ac791a10a53b0457a467e7ee341b512ad9413e03", "candidate_revision": os.environ["GITHUB_SHA"], "repository": os.environ["GITHUB_REPOSITORY"], "run_id": os.environ["GITHUB_RUN_ID"], "version": "3.0.21", "architecture": "arm64", "application_source_changed": False, "signature": "ad hoc local-development signature", "notarized": False, "xcode": subprocess.check_output(["xcodebuild", "-version"], text=True)}
+          pathlib.Path("baseline-artifact/build-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          PYREC
+          ditto -c -k --keepParent baseline-artifact Stats-fork-baseline.zip
+          shasum -a 256 Stats-fork-baseline.zip > Stats-fork-baseline.zip.sha256
+
+      - name: Retain baseline artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Stats-fork-baseline-${{ github.sha }}
+          path: |
+            Stats-fork-baseline.zip
+            Stats-fork-baseline.zip.sha256
+          retention-days: 7
+          if-no-files-found: error
