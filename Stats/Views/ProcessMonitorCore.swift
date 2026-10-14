@@ -287,7 +287,7 @@ final class ProcessesEngine {
         guard !s.incident, time - (s.thresholdSince ?? time) >= configuration.sustainedSeconds,
               time - s.lastAlert >= configuration.cooldownSeconds else { return nil }
         s.incident = true; s.lastAlert = time
-        return ProcessMemoryAlert(key: s.key, name: s.chat.map { "\($0.label) · \(s.name)" } ?? s.name, bytes: bytes,
+        return ProcessMemoryAlert(key: s.key, name: s.name, bytes: bytes,
                                   reason: Double(bytes) >= budget ? "Memory budget exceeded" : "Memory grew beyond the five-minute threshold")
     }
     func snapshot() -> ProcessesSnapshot {

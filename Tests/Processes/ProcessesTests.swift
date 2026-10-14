@@ -259,6 +259,13 @@ struct ProcessesTests {
             let next = e.update(ProcessGrouping.groups([tagged(20, chat: chatB)]), complete: true, time: 5)
             return next.rows[0].chat?.id == chatB && next.rows[0].children[0].chat?.id == chatB
         }
+        check("notifications never include chat names or IDs") {
+            let e = enabled(5); var c = e.configuration; c.linkChats = true; e.configure(c)
+            let groups = ProcessGrouping.groups([tagged(20, chat: chatA, bytes: 2 * gb)])
+            _ = e.update(groups, complete: true, time: 0)
+            let events = e.update(groups, complete: true, time: 5).alerts
+            return events.count == 1 && !events[0].name.contains("Synthetic workbook") && !events[0].name.contains(chatA)
+        }
         check("same folder or app ancestry never invents chat ownership") {
             let e = ProcessesEngine(); var c = ProcessesConfiguration(); c.linkChats = true; e.configure(c)
             let result = e.update(ProcessGrouping.groups([process(10, name: "Codex", assistant: true), process(11, parent: 10, name: "worker")]), complete: true, time: 0)
