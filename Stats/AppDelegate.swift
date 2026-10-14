@@ -82,6 +82,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self.showSettingsIfNoActiveWidgets()
         }
         self.defaultValues()
+        UNUserNotificationCenter.current().delegate = self
+        ProcessesMonitor.shared.start()
         self.icon()
         
         NotificationCenter.default.addObserver(self, selector: #selector(listenForAppPause), name: .pause, object: nil)
@@ -103,6 +105,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
     
     func applicationWillTerminate(_ aNotification: Notification) {
+        ProcessesMonitor.shared.stop()
         modules.forEach{ $0.terminate() }
         SystemStats.shared.terminate()
     }
@@ -194,9 +197,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         return w
     }
     
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler(notification.request.identifier.hasPrefix("Stats.Processes.") ? [.banner, .sound] : [])
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.notification.request.identifier.hasPrefix("Stats.Processes.") {
+            DispatchQueue.main.async {
+                self.clickInNotification = true
+                self.ensureSettingsWindow().open(module: "Processes")
+            }
+            completionHandler()
+            return
+        }
         self.clickInNotification = true
         
         if let uri = response.notification.request.content.userInfo["url"] as? String {

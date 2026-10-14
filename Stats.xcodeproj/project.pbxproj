@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F01300000000000000000102 /* ProcessesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000002 /* ProcessesView.swift */; };
+		F01300000000000000000101 /* ProcessMemoryCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000001 /* ProcessMemoryCollector.swift */; };
+		F01300000000000000000100 /* ProcessMonitorCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000000 /* ProcessMonitorCore.swift */; };
 		4A05F9BD83C04F70BFFF7F37 /* Kit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 369463B2B7EA4AF0A895A9B6 /* Kit.swift */; };
 		5C038CF62D86EE8A00516809 /* SystemStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C038CF52D86EE8700516809 /* SystemStats.swift */; };
 		5C044F7A2B3DE6F3005F6951 /* portal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C044F792B3DE6F3005F6951 /* portal.swift */; };
@@ -534,6 +537,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F01300000000000000000002 /* ProcessesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessesView.swift; sourceTree = "<group>"; };
+		F01300000000000000000001 /* ProcessMemoryCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMemoryCollector.swift; sourceTree = "<group>"; };
+		F01300000000000000000000 /* ProcessMonitorCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMonitorCore.swift; sourceTree = "<group>"; };
 		0192A7ED2B017E190056F918 /* hi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = hi; path = hi.lproj/Localizable.strings; sourceTree = "<group>"; };
 		13BE56042D0E6963001C58EC /* en-AU */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en-AU"; path = "en-AU.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		2658929724FC0F3B00FB3B6A /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
@@ -1208,6 +1214,9 @@
 		9A81C74A24499C4B00825D92 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				F01300000000000000000000 /* ProcessMonitorCore.swift */,
+				F01300000000000000000001 /* ProcessMemoryCollector.swift */,
+				F01300000000000000000002 /* ProcessesView.swift */,
 				9A81C74C24499C7000825D92 /* Settings.swift */,
 				9A045EB62594F8D100ED58F2 /* Dashboard.swift */,
 				9A81C74B24499C7000825D92 /* AppSettings.swift */,
@@ -2221,6 +2230,9 @@
 				9AABEB7A243FD26200668CB0 /* AppDelegate.swift in Sources */,
 				9A9EA9452476D34500E3B883 /* Update.swift in Sources */,
 				9A045EB72594F8D100ED58F2 /* Dashboard.swift in Sources */,
+				F01300000000000000000100 /* ProcessMonitorCore.swift in Sources */,
+				F01300000000000000000101 /* ProcessMemoryCollector.swift in Sources */,
+				F01300000000000000000102 /* ProcessesView.swift in Sources */,
 				9A81C74E24499C7000825D92 /* Settings.swift in Sources */,
 				9A81C74D24499C7000825D92 /* AppSettings.swift in Sources */,
 				5C21D80B296C7B81005BA16D /* CombinedView.swift in Sources */,
