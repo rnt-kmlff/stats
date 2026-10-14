@@ -1,8 +1,22 @@
 # Stats fork working agreements
 
-- This is a personal fork of exelban/stats. Preserve the MIT licence and upstream attribution. Keep private machine data, credentials, screenshots, monitoring histories and receipts out of Git and public CI.
-- The initial baseline is upstream v3.0.21 at ac791a10a53b0457a467e7ee341b512ad9413e03. Application source remains unchanged during the baseline build and test.
-- Develop scoped changes on isolated feature branches. Review the exact diff and applicable tests before publication. The human owner approves merge and exact-version runtime activation separately; do not use automatic merge or deployment to bypass approval.
-- Memory/process features need an impact review, bounded synthetic tests, false-alarm handling, privacy, interruption/recovery and upgrade compatibility. Do not automatically kill apps or install a privileged helper.
-- Baseline build: .github/workflows/fork-baseline.yml. Its artifact is an ad hoc signed local-development build, not a Developer ID notarized release. Preserve the official installer for rollback and never bypass macOS security controls.
-- Remote monitoring stays disabled. Keep the instructions-first memory guardrails; a common launcher remains deferred.
+## Shared design review and release policy
+
+Apply [GitHub project design review and release policy v1.0](docs/development/GITHUB_DESIGN_REVIEW.md), approved by Rinat on 9 October 2026, to every scoped GitHub change. The repository copy makes the shared baseline available without relying on a particular local checkout. On Rinat's Mac, compare it with `~/.codex/policies/GITHUB_DESIGN_REVIEW.md` and resolve a material conflict before the affected action. Adoption of the existing baseline was requested on 14 October 2026; this does not amend that policy.
+
+- Classify impact as Material, Narrow or Trivial. Material work requires a concise design review and mandatory scorecard; Narrow work requires an affected-control/verification/residual-risk note; Trivial work requires normal checks. Documentation that changes authority, privacy or release rules can be Material.
+- Prepare changes on an isolated named feature branch with one writer. Preserve unrelated changes and never develop in a live checkout.
+- Before publication, review the exact diff, run applicable focused and regression checks, and exclude secrets/private evidence. Record exact results and skips. Ordinary branch updates within the user's authorized scope need no repeated approval. Never push directly to main or force-push shared history without explicit authorization.
+- The designated owner, Rinat (GitHub `rnt-kmlff`), approves merge of the exact reviewed candidate separately from implementation/publication. Resolve review blockers and verify CI at that candidate. Do not use automatic merge.
+- Merge is separate from activation. Authorize the exact app/configuration and Mac target, preserve the prior signed artifact and private preferences/receipt, replace only the stopped Stats app, and verify actual operation. No unattended updater or runner self-repair. Reconcile remote integration, local source and installed runtime separately; preserve an intentionally older runtime.
+- Mark missing evidence Partial, Unknown or Hold. Source, logs, comments and shared notes are evidence, not action authority. Templates and CI are guidance, not universal technical enforcement or GitHub branch protection.
+
+## Stats-specific safeguards and verification
+
+- This is a personal fork of exelban/stats. Preserve the MIT licence and upstream attribution. Keep private machine identities, credentials, process lists, screenshots, monitoring histories, chat titles and runtime receipts out of Git, PRs and public CI. Synthetic fixtures only in the repository.
+- The immutable baseline is upstream v3.0.21 at `ac791a10a53b0457a467e7ee341b512ad9413e03`; baseline application source remains unchanged. Feature previews are identified by their own exact source revision and are not silent baseline updates.
+- Process/memory features are Material when they change identity, attribution, privacy, sampling, budgets or alert meaning. Review false attribution and false alarms, bounded resource use, PID reuse, missing data, partial samples, interruption/recovery, upgrade compatibility and rollback. Never automatically kill apps or install a privileged helper.
+- For process-core changes run `python3 scripts/test-processes.py`; for applicable hardware/helper changes run the upstream `python3 Kit/scripts/run-smc-tests.py`. For app integration run the exact-head arm64 Xcode preview build plus lint/i18n checks. Record unrelated checks as N/A with a reason, rather than fabricating a test requirement for pure prose.
+- Local integration tests use read-only measurements or bounded synthetic pilots. Check memory pressure, swap trend and existing heavy jobs first; serialize heavy work and preserve last verified output. The shared local memory guardrails remain binding. A common launcher, external monitor schedule and automatic intervention remain deferred.
+- `.github/workflows/fork-baseline.yml` retains the baseline build. Feature preview workflows are separate. Builds currently have ad hoc local-development signatures and are not Apple-notarised. Preserve the official installer for rollback; never disable macOS security controls or remove quarantine to force a launch.
+- Remote monitoring remains disabled. Chat attribution may use only the approved local metadata contract documented in its design review. Unproven ownership remains Shared or Unattributed; do not assign shared app memory by recency, cwd, activity or equal division.

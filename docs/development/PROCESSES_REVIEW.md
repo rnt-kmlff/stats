@@ -1,5 +1,7 @@
 # Processes preview design and verification
 
+Scope note: this review describes the first process-only preview. The optional chat-linking metadata extension is reviewed separately in [CHAT_ATTRIBUTION_REVIEW.md](CHAT_ATTRIBUTION_REVIEW.md).
+
 ## Objective and authorized step
 
 Implement a local Processes view for ChatGPT/Codex and current-user Node, Python and build-tool trees, with bounded memory history and configurable notifications. The owner requested implementation, building and testing on their Mac. Publication of the feature branch is needed for the Xcode build runner; no merge is authorized. Activation for this local development test retains the approved ad hoc signing boundary and a rollback artifact.

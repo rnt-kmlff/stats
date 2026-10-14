@@ -14,6 +14,7 @@ struct WatchedProcess {
     let name: String
     let assistantAffinity: Bool
     var footprint: UInt64?
+    var chat: CodexChatOwnership? = nil
 }
 
 enum ProcessWatchKind: String, Codable { case assistant, job }
@@ -30,11 +31,27 @@ struct MemoryAlertRule: Codable, Equatable {
 struct ProcessesConfiguration: Codable, Equatable {
     var enabled = true
     var alerts = false
+    var linkChats = false
     var assistant = MemoryAlertRule(budgetGB: 8, growthGB: 1)
     var jobs = MemoryAlertRule(budgetGB: 4, growthGB: 1)
     var sustainedSeconds: Double = 15
     var cooldownSeconds: Double = 300
     var overrides: [String: MemoryAlertRule] = [:]
+    enum CodingKeys: String, CodingKey {
+        case enabled, alerts, linkChats, assistant, jobs, sustainedSeconds, cooldownSeconds, overrides
+    }
+    init() {}
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decode(Bool.self, forKey: .enabled)
+        alerts = try values.decode(Bool.self, forKey: .alerts)
+        linkChats = try values.decodeIfPresent(Bool.self, forKey: .linkChats) ?? false
+        assistant = try values.decode(MemoryAlertRule.self, forKey: .assistant)
+        jobs = try values.decode(MemoryAlertRule.self, forKey: .jobs)
+        sustainedSeconds = try values.decode(Double.self, forKey: .sustainedSeconds)
+        cooldownSeconds = try values.decode(Double.self, forKey: .cooldownSeconds)
+        overrides = try values.decode([String: MemoryAlertRule].self, forKey: .overrides)
+    }
     func rule(for kind: ProcessWatchKind) -> MemoryAlertRule { kind == .assistant ? assistant : jobs }
     func validated() -> ProcessesConfiguration {
         var c = self
@@ -52,6 +69,7 @@ struct WatchedProcessGroup {
     let kind: ProcessWatchKind
     let members: [WatchedProcess]
     var title: String { kind == .assistant ? "ChatGPT / Codex" : "Local job: \(root.name)" }
+    var chat: CodexChatOwnership? { CodexChatUsage.commonOwner(members) }
     var footprint: UInt64? {
         var total: UInt64 = 0
         for p in members {
@@ -121,10 +139,11 @@ final class ProcessMemoryRow: NSObject {
     let growth: Double?
     let status: String
     let children: [ProcessMemoryRow]
+    let chat: CodexChatOwnership?
     init(key: String, name: String, pid: Int32, kind: ProcessWatchKind, isGroup: Bool,
-         current: UInt64?, peak: UInt64, growth: Double?, status: String, children: [ProcessMemoryRow] = []) {
+         current: UInt64?, peak: UInt64, growth: Double?, status: String, children: [ProcessMemoryRow] = [], chat: CodexChatOwnership? = nil) {
         self.key = key; self.name = name; self.pid = pid; self.kind = kind; self.isGroup = isGroup
-        self.current = current; self.peak = peak; self.growth = growth; self.status = status; self.children = children
+        self.current = current; self.peak = peak; self.growth = growth; self.status = status; self.children = children; self.chat = chat
     }
 }
 
@@ -151,6 +170,7 @@ private final class ProcessMemorySeries {
     let kind: ProcessWatchKind
     let isGroup: Bool
     var parent: String?
+    var chat: CodexChatOwnership?
     var current: UInt64?
     var peak: UInt64 = 0
     var growth: Double?
@@ -191,6 +211,7 @@ private struct SeriesDescriptor {
     let kind: ProcessWatchKind
     let isGroup: Bool
     let parent: String?
+    var chat: CodexChatOwnership? = nil
 }
 
 final class ProcessesEngine {
@@ -201,6 +222,7 @@ final class ProcessesEngine {
     var selectedKey: String?
     func configure(_ value: ProcessesConfiguration) {
         configuration = value.validated()
+        if !configuration.linkChats { series.values.forEach { $0.chat = nil } }
         series.values.forEach { $0.resetAlert() }
     }
     func update(_ groups: [WatchedProcessGroup], complete: Bool, time: TimeInterval, unknownPIDs: Set<Int32> = []) -> ProcessesSnapshot {
@@ -208,7 +230,7 @@ final class ProcessesEngine {
         var present: Set<String> = []
         var events: [ProcessMemoryAlert] = []
         for group in groups.prefix(Self.maxGroups) {
-            let s = obtain(SeriesDescriptor(key: group.key, name: group.title, pid: group.root.id.pid, kind: group.kind, isGroup: true, parent: nil), time: time)
+            let s = obtain(SeriesDescriptor(key: group.key, name: group.title, pid: group.root.id.pid, kind: group.kind, isGroup: true, parent: nil, chat: group.chat), time: time)
             guard let s else { continue }
             present.insert(s.key); s.lastSeen = time
             let missingMember = series.values.contains { $0.parent == group.key && unknownPIDs.contains($0.pid) }
@@ -217,7 +239,8 @@ final class ProcessesEngine {
             if let event = alert(s, time: time) { events.append(event) }
             for member in group.members {
                 let key = "process:\(member.id.key)"
-                guard let child = obtain(SeriesDescriptor(key: key, name: member.name, pid: member.id.pid, kind: group.kind, isGroup: false, parent: group.key), time: time) else { continue }
+                guard let child = obtain(SeriesDescriptor(key: key, name: member.name, pid: member.id.pid, kind: group.kind,
+                                                         isGroup: false, parent: group.key, chat: member.chat), time: time) else { continue }
                 present.insert(key); child.lastSeen = time; child.parent = group.key
                 let bytes = complete ? member.footprint : nil
                 child.sample(bytes, status: !complete || bytes == nil ? "Unavailable" : "Live", time: time)
@@ -239,12 +262,13 @@ final class ProcessesEngine {
     }
     private func obtain(_ descriptor: SeriesDescriptor, time: TimeInterval) -> ProcessMemorySeries? {
         let key = descriptor.key
-        if let s = series[key] { return s }
+        if let s = series[key] { s.name = descriptor.name; s.chat = configuration.linkChats ? descriptor.chat : nil; return s }
         if series.count >= Self.maxSeries {
             if let oldest = series.values.filter({ $0.current == nil }).min(by: { $0.lastSeen < $1.lastSeen }) { series.removeValue(forKey: oldest.key) } else { return nil }
         }
         let s = ProcessMemorySeries(key: key, name: descriptor.name, pid: descriptor.pid, kind: descriptor.kind,
                                     isGroup: descriptor.isGroup, parent: descriptor.parent, time: time)
+        s.chat = configuration.linkChats ? descriptor.chat : nil
         series[key] = s
         return s
     }
@@ -263,13 +287,13 @@ final class ProcessesEngine {
         guard !s.incident, time - (s.thresholdSince ?? time) >= configuration.sustainedSeconds,
               time - s.lastAlert >= configuration.cooldownSeconds else { return nil }
         s.incident = true; s.lastAlert = time
-        return ProcessMemoryAlert(key: s.key, name: s.name, bytes: bytes,
+        return ProcessMemoryAlert(key: s.key, name: s.chat.map { "\($0.label) · \(s.name)" } ?? s.name, bytes: bytes,
                                   reason: Double(bytes) >= budget ? "Memory budget exceeded" : "Memory grew beyond the five-minute threshold")
     }
     func snapshot() -> ProcessesSnapshot {
         func row(_ s: ProcessMemorySeries, children: [ProcessMemoryRow] = []) -> ProcessMemoryRow {
             ProcessMemoryRow(key: s.key, name: s.name, pid: s.pid, kind: s.kind, isGroup: s.isGroup,
-                             current: s.current, peak: s.peak, growth: s.growth, status: s.status, children: children)
+                             current: s.current, peak: s.peak, growth: s.growth, status: s.status, children: children, chat: s.chat)
         }
         let groups = series.values.filter { $0.isGroup }.sorted {
             if ($0.current != nil) != ($1.current != nil) { return $0.current != nil }

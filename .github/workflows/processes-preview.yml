@@ -2,7 +2,7 @@ name: Processes preview build
 
 on:
   push:
-    branches: [codex/processes-view]
+    branches: [codex/processes-view, codex/chat-attribution]
   workflow_dispatch:
 
 permissions:
@@ -42,7 +42,7 @@ jobs:
           APP=build/DerivedData/Build/Products/Release/Stats.app
           test -d "$APP"
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")" = 3.0.21
-          /usr/libexec/PlistBuddy -c "Add :ForkFeature string Processes-preview-1" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :ForkFeature string Processes-preview-2-chat-links" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :ForkBuildRevision string $GITHUB_SHA" "$APP/Contents/Info.plist"
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict "$APP"
@@ -51,7 +51,7 @@ jobs:
           cp LICENSE processes-artifact/LICENSE
           python3 - <<'PYREC'
           import json, os, subprocess, pathlib
-          receipt = {"upstream_revision": "ac791a10a53b0457a467e7ee341b512ad9413e03", "candidate_revision": os.environ["GITHUB_SHA"], "repository": os.environ["GITHUB_REPOSITORY"], "run_id": os.environ["GITHUB_RUN_ID"], "version": "3.0.21", "architecture": "arm64", "application_source_changed": True, "feature": "Processes-preview-1", "signature": "ad hoc local-development signature", "notarized": False, "xcode": subprocess.check_output(["xcodebuild", "-version"], text=True)}
+          receipt = {"upstream_revision": "ac791a10a53b0457a467e7ee341b512ad9413e03", "candidate_revision": os.environ["GITHUB_SHA"], "repository": os.environ["GITHUB_REPOSITORY"], "run_id": os.environ["GITHUB_RUN_ID"], "version": "3.0.21", "architecture": "arm64", "application_source_changed": True, "feature": "Processes-preview-2-chat-links", "signature": "ad hoc local-development signature", "notarized": False, "xcode": subprocess.check_output(["xcodebuild", "-version"], text=True)}
           pathlib.Path("processes-artifact/build-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
           PYREC
           ditto -c -k --keepParent processes-artifact Stats-processes-preview.zip
