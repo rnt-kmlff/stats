@@ -5,7 +5,7 @@ import UserNotifications
 final class ProcessesMonitor {
     static let shared = ProcessesMonitor()
     private static let preferencesKey = "ProcessesMonitor.Configuration.v1"
-    private let queue = DispatchQueue(label: "eu.exelban.Stats.processes", qos: .utility)
+    private let queue = DispatchQueue(label: "eu.exelban.Stats.processes", qos: .utility, autoreleaseFrequency: .workItem)
     private let engine = ProcessesEngine()
     private var timer: DispatchSourceTimer?
     private var workerPaused = false
@@ -75,7 +75,10 @@ final class ProcessesMonitor {
         let scan = ProcessMemoryCollector.scan()
         var value = engine.update(scan.groups, complete: scan.complete, time: time, unknownPIDs: scan.unknownPIDs)
         value.limited = value.limited || scan.limited
-        publish(value, status: !scan.complete ? "Process scan unavailable" : value.limited ? "Sample limit reached; some processes are omitted" : "Sampled \(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)) · every 5 seconds")
+        let sampled = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        let status = !scan.complete ? "Process scan unavailable" : value.limited
+            ? "Sample limit reached; some processes are omitted" : "Sampled \(sampled) · every 5 seconds"
+        publish(value, status: status)
     }
     private func publish(_ value: ProcessesSnapshot, status: String?) {
         let revision = workerGeneration
@@ -212,7 +215,8 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         stack.addArrangedSubview(test)
         notifications.font = .systemFont(ofSize: 11); notifications.textColor = .secondaryLabelColor
         stack.addArrangedSubview(notifications)
-        stack.addArrangedSubview(label("Local jobs include Node, Python and common build tools; names alone do not prove a build is running. Shared app processes cannot identify an individual chat. History stays in memory and clears when Stats quits."))
+        stack.addArrangedSubview(label("Local jobs include Node, Python and common build tools; names alone do not prove a build is running. " +
+                                      "Shared app processes cannot identify an individual chat. History stays in memory and clears when Stats quits."))
         for view in stack.arrangedSubviews where view is NSTextField || view === tableScroll || view === graph {
             view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
         }
@@ -244,7 +248,10 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
     private func loadControls() {
         let c = monitor.configuration
         enabled.state = c.enabled ? .on : .off; alerts.state = c.alerts ? .on : .off
-        for (key, value) in [("assistantBudget", c.assistant.budgetGB), ("assistantGrowth", c.assistant.growthGB), ("jobsBudget", c.jobs.budgetGB), ("jobsGrowth", c.jobs.growthGB), ("duration", c.sustainedSeconds), ("cooldown", c.cooldownSeconds)] { inputs[key]?.stringValue = String(format: "%g", value) }
+        let values = [("assistantBudget", c.assistant.budgetGB), ("assistantGrowth", c.assistant.growthGB),
+                      ("jobsBudget", c.jobs.budgetGB), ("jobsGrowth", c.jobs.growthGB),
+                      ("duration", c.sustainedSeconds), ("cooldown", c.cooldownSeconds)]
+        for (key, value) in values { inputs[key]?.stringValue = String(format: "%g", value) }
     }
     private func number(_ key: String, range: ClosedRange<Double>) -> Double? {
         guard let input = inputs[key], let value = Double(input.stringValue.replacingOccurrences(of: ",", with: ".")), value.isFinite, range.contains(value) else {
@@ -288,7 +295,10 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         if let field = notification.object as? NSTextField, field.identifier?.rawValue.hasPrefix("custom") == true { inspectorDirty = true }
     }
     private func fieldName(_ key: String) -> String {
-        ["assistantBudget": "ChatGPT/Codex budget", "assistantGrowth": "ChatGPT/Codex growth", "jobsBudget": "Local job budget", "jobsGrowth": "Local job growth", "customBudget": "Selected row budget", "customGrowth": "Selected row growth", "duration": "Alert hold seconds", "cooldown": "Alert cooldown seconds"][key] ?? key
+        let names = ["assistantBudget": "ChatGPT/Codex budget", "assistantGrowth": "ChatGPT/Codex growth",
+                     "jobsBudget": "Local job budget", "jobsGrowth": "Local job growth", "customBudget": "Selected row budget",
+                     "customGrowth": "Selected row growth", "duration": "Alert hold seconds", "cooldown": "Alert cooldown seconds"]
+        return names[key] ?? key
     }
     @objc private func testNotification() { monitor.testNotification() }
     private func render() {

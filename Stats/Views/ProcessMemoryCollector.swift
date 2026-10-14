@@ -26,8 +26,7 @@ struct ProcessMemoryCollector {
             let pathResult = buffer.withUnsafeMutableBytes { proc_pidpath(pid, $0.baseAddress, UInt32($0.count)) }
             let path = pathResult > 0 ? String(cString: buffer) : ""
             let name: String
-            if !path.isEmpty { name = (path as NSString).lastPathComponent }
-            else {
+            if !path.isEmpty { name = (path as NSString).lastPathComponent } else {
                 var nameBuffer = [CChar](repeating: 0, count: 256)
                 _ = nameBuffer.withUnsafeMutableBytes { proc_name(pid, $0.baseAddress, UInt32($0.count)) }
                 name = String(cString: nameBuffer)

@@ -65,7 +65,11 @@ struct WatchedProcessGroup {
 }
 
 struct ProcessGrouping {
-    static let buildNames: Set<String> = ["node", "bun", "deno", "python", "python3", "pypy", "swift", "swift-frontend", "swiftc", "clang", "clang++", "cc", "gcc", "g++", "xcodebuild", "make", "cmake", "ninja", "cargo", "rustc", "npm", "esbuild", "tsc", "webpack", "rollup", "vite", "java", "gradle"]
+    static let buildNames: Set<String> = [
+        "node", "bun", "deno", "python", "python3", "pypy", "swift", "swift-frontend", "swiftc",
+        "clang", "clang++", "cc", "gcc", "g++", "xcodebuild", "make", "cmake", "ninja", "cargo",
+        "rustc", "npm", "esbuild", "tsc", "webpack", "rollup", "vite", "java", "gradle"
+    ]
     static func isBuildTool(_ p: WatchedProcess) -> Bool {
         let name = p.name.lowercased()
         return !p.assistantAffinity && (buildNames.contains(name) || name.hasPrefix("python3.") || name.hasPrefix("pypy3"))
@@ -180,6 +184,15 @@ private final class ProcessMemorySeries {
     func resetAlert() { thresholdSince = nil; incident = false; lastAlert = -.infinity }
 }
 
+private struct SeriesDescriptor {
+    let key: String
+    let name: String
+    let pid: Int32
+    let kind: ProcessWatchKind
+    let isGroup: Bool
+    let parent: String?
+}
+
 final class ProcessesEngine {
     static let maxGroups = 20
     static let maxSeries = 544
@@ -195,7 +208,7 @@ final class ProcessesEngine {
         var present: Set<String> = []
         var events: [ProcessMemoryAlert] = []
         for group in groups.prefix(Self.maxGroups) {
-            let s = obtain(key: group.key, name: group.title, pid: group.root.id.pid, kind: group.kind, isGroup: true, parent: nil, time: time)
+            let s = obtain(SeriesDescriptor(key: group.key, name: group.title, pid: group.root.id.pid, kind: group.kind, isGroup: true, parent: nil), time: time)
             guard let s else { continue }
             present.insert(s.key); s.lastSeen = time
             let missingMember = series.values.contains { $0.parent == group.key && unknownPIDs.contains($0.pid) }
@@ -204,7 +217,7 @@ final class ProcessesEngine {
             if let event = alert(s, time: time) { events.append(event) }
             for member in group.members {
                 let key = "process:\(member.id.key)"
-                guard let child = obtain(key: key, name: member.name, pid: member.id.pid, kind: group.kind, isGroup: false, parent: group.key, time: time) else { continue }
+                guard let child = obtain(SeriesDescriptor(key: key, name: member.name, pid: member.id.pid, kind: group.kind, isGroup: false, parent: group.key), time: time) else { continue }
                 present.insert(key); child.lastSeen = time; child.parent = group.key
                 let bytes = complete ? member.footprint : nil
                 child.sample(bytes, status: !complete || bytes == nil ? "Unavailable" : "Live", time: time)
@@ -224,13 +237,14 @@ final class ProcessesEngine {
         for s in series.values { s.sample(nil, status: "Paused", time: time); s.thresholdSince = nil }
         return snapshot()
     }
-    private func obtain(key: String, name: String, pid: Int32, kind: ProcessWatchKind, isGroup: Bool, parent: String?, time: TimeInterval) -> ProcessMemorySeries? {
+    private func obtain(_ descriptor: SeriesDescriptor, time: TimeInterval) -> ProcessMemorySeries? {
+        let key = descriptor.key
         if let s = series[key] { return s }
         if series.count >= Self.maxSeries {
-            if let oldest = series.values.filter({ $0.current == nil }).min(by: { $0.lastSeen < $1.lastSeen }) { series.removeValue(forKey: oldest.key) }
-            else { return nil }
+            if let oldest = series.values.filter({ $0.current == nil }).min(by: { $0.lastSeen < $1.lastSeen }) { series.removeValue(forKey: oldest.key) } else { return nil }
         }
-        let s = ProcessMemorySeries(key: key, name: name, pid: pid, kind: kind, isGroup: isGroup, parent: parent, time: time)
+        let s = ProcessMemorySeries(key: key, name: descriptor.name, pid: descriptor.pid, kind: descriptor.kind,
+                                    isGroup: descriptor.isGroup, parent: descriptor.parent, time: time)
         series[key] = s
         return s
     }

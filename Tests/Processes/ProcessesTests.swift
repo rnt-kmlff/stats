@@ -136,7 +136,7 @@ struct ProcessesTests {
         }
         check("alerts off is respected") {
             let e = enabled(); var c = e.configuration; c.alerts = false; e.configure(c)
-            for t in stride(from: 0.0, through: 30, by: 5) { if !e.update([group(2*gb)], complete: true, time: t).alerts.isEmpty { return false } }
+            for t in stride(from: 0.0, through: 30, by: 5) where !e.update([group(2*gb)], complete: true, time: t).alerts.isEmpty { return false }
             return true
         }
         check("history capped by time and sample count") {
@@ -158,8 +158,11 @@ struct ProcessesTests {
             var c = ProcessesConfiguration(); c.jobs.budgetGB = -1; c.sustainedSeconds = 0; c.cooldownSeconds = .infinity
             c.overrides = Dictionary(uniqueKeysWithValues: (0..<30).map { ("synthetic\($0)", MemoryAlertRule(budgetGB: 1, growthGB: 0)) })
             let v = c.validated()
-            let decoded = try! JSONDecoder().decode(ProcessesConfiguration.self, from: JSONEncoder().encode(v))
-            return decoded == v && v.jobs.budgetGB == 0.05 && v.sustainedSeconds == 5 && v.cooldownSeconds == 300 && v.overrides.count == 20
+            do {
+                let data = try JSONEncoder().encode(v)
+                let decoded = try JSONDecoder().decode(ProcessesConfiguration.self, from: data)
+                return decoded == v && v.jobs.budgetGB == 0.05 && v.sustainedSeconds == 5 && v.cooldownSeconds == 300 && v.overrides.count == 20
+            } catch { return false }
         }
         print("Executed \(passed) process monitoring tests, 0 failures")
     }
