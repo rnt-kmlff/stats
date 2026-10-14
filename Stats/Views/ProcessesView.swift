@@ -255,6 +255,7 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
     }
     private func number(_ key: String, range: ClosedRange<Double>) -> Double? {
         guard let input = inputs[key], let value = Double(input.stringValue.replacingOccurrences(of: ",", with: ".")), value.isFinite, range.contains(value) else {
+            validation.textColor = .systemRed
             validation.stringValue = "Enter \(range.lowerBound)–\(range.upperBound) for \(fieldName(key)). Changes were not saved."
             return nil
         }
@@ -272,7 +273,8 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         var c = monitor.configuration
         c.assistant = MemoryAlertRule(budgetGB: a, growthGB: ag); c.jobs = MemoryAlertRule(budgetGB: j, growthGB: jg)
         c.sustainedSeconds = duration; c.cooldownSeconds = cooldown
-        monitor.setConfiguration(c); validation.stringValue = "Saved default limits. These notify; they do not cap or stop processes."
+        monitor.setConfiguration(c); validation.textColor = .secondaryLabelColor
+        validation.stringValue = "Saved default limits. These notify; they do not cap or stop processes."
     }
     private func selectedRow() -> ProcessMemoryRow? { outline.item(atRow: outline.selectedRow) as? ProcessMemoryRow }
     @objc private func toggleCustom() { inspectorDirty = true; apply.isEnabled = selectedRow() != nil }
@@ -280,16 +282,20 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         guard let selected = selectedRow() else { return }
         var c = monitor.configuration
         if custom.state == .on {
-            guard c.overrides[selected.key] != nil || c.overrides.count < 20 else { validation.stringValue = "The 20 custom-limit slots are full. Remove an existing custom limit first."; return }
+            guard c.overrides[selected.key] != nil || c.overrides.count < 20 else { validation.textColor = .systemRed; validation.stringValue = "The 20 custom-limit slots are full. Remove an existing custom limit first."; return }
             guard let budget = number("customBudget", range: 0.05...128), let growth = number("customGrowth", range: 0...128) else { return }
             c.overrides[selected.key] = MemoryAlertRule(budgetGB: budget, growthGB: growth)
         } else { c.overrides.removeValue(forKey: selected.key) }
+        window?.makeFirstResponder(nil)
         inspectorDirty = false
-        monitor.setConfiguration(c); validation.stringValue = "Saved selected-row limits. They apply to this process lifetime."
+        monitor.setConfiguration(c); validation.textColor = .secondaryLabelColor
+        validation.stringValue = "Saved selected-row limits. They apply to this process lifetime."
     }
     @objc private func clearCustom() {
+        window?.makeFirstResponder(nil)
         var c = monitor.configuration; c.overrides = [:]; inspectorDirty = false
-        monitor.setConfiguration(c); validation.stringValue = "Custom limits cleared; defaults still apply to groups."
+        monitor.setConfiguration(c); validation.textColor = .secondaryLabelColor
+        validation.stringValue = "Custom limits cleared; defaults still apply to groups."
     }
     func controlTextDidChange(_ notification: Notification) {
         if let field = notification.object as? NSTextField, field.identifier?.rawValue.hasPrefix("custom") == true { inspectorDirty = true }

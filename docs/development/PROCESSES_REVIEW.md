@@ -23,7 +23,7 @@ Impact: Material (new process sampling, history, classification and alerts). Run
 | Privacy and least privilege | Met by design | Current-user libproc reads; no secret-bearing process arguments or persistent histories. Review final diff. |
 | Identity, gaps and alerts | Focused tests passed | 29 deterministic fixtures pass locally and cover restart/PID reuse, denial, partial samples, timing, flapping, recovery, growth and history bounds. |
 | Reproducibility | Met by design | Pinned actions, exact-head build receipt, checksum and signature checks; no credentials in build workflow. |
-| Capacity and operation | Partial | Five live read-only scans on the development Mac averaged 6.5 ms (max 7.9 ms), with complete readings and no sampling limit. App UI/footprint test remains; inspect view/editing, history, pause and notification delivery. No memory stress needed. |
+| Capacity and operation | Preview tested; final regression pending | Five live read-only scans on the development Mac averaged 6.5 ms (max 7.9 ms), with complete readings and no sampling limit. First exact preview compiled, passed the 166 upstream tests, displayed live groups/individual history and delivered one sustained-threshold alert without added load. A focused-field reset display issue was fixed; repeat reset, pause, persistence and footprint checks on the final candidate before completing activation. Private receipts only. |
 | Recovery and rollback | Prepared | Keep baseline installer/artifact and private preference backup. Replace only the owned Stats app at a clean quit boundary. |
 | Signing | Explicit limitation | Ad hoc signed development preview, not Apple-notarised. Never disable security controls or remove quarantine to force a launch. |
 
