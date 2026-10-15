@@ -7,11 +7,14 @@ struct ProcessMemoryScan {
     let limited: Bool
     var unknownPIDs: Set<Int32> = []
     var chatLinks = CodexChatLinkScan()
+    var helperExports = HelperOwnershipScan()
 }
 
 struct ProcessMemoryCollector {
+    private static let helperReader = HelperOwnershipReader()
+    static func clearHelperExports() { helperReader.clear() }
     // No task ports or administrator rights. Optional chat linking follows its reviewed metadata contract.
-    static func scan(linkChats: Bool = false) -> ProcessMemoryScan {
+    static func scan(linkChats: Bool = false, helperExports: Bool = false, exportReader: HelperOwnershipReader? = nil) -> ProcessMemoryScan {
         let count = proc_listallpids(nil, 0)
         guard count > 0 else { return ProcessMemoryScan(groups: [], complete: false, limited: false) }
         let capacity = min(8192, max(1024, Int(count) + 256))
@@ -49,13 +52,22 @@ struct ProcessMemoryCollector {
             }
         }
         let live = selected.flatMap { $0.members }.map { p in var value = p; value.footprint = measured[p.id]; return value }
-        let links = CodexChatAttribution.scan(live, enabled: linkChats)
+        let helpers = (exportReader ?? helperReader).scan(live, enabled: linkChats && helperExports)
+        let ids = helpers.records.values.flatMap { $0.chatIds }
+        let links = CodexChatAttribution.scan(live, enabled: linkChats, sharedHelpers: Set(helpers.records.keys), additionalIDs: ids)
         let groups = selected.map { group in
             WatchedProcessGroup(key: group.key, root: group.root, kind: group.kind,
-                                members: group.members.map { p in var value = p; value.footprint = measured[p.id]; value.chat = links.owners[p.id]; return value })
+                                members: group.members.map { p in
+                                    var value = p; value.footprint = measured[p.id]; value.chat = links.owners[p.id]
+                                    if let record = helpers.records[p.id] {
+                                        value.helper = HelperChatAssociation(chats: record.chatIds.map { CodexChatOwnership(id: $0, title: links.titles[$0]) }, overflow: record.overflow)
+                                        value.role = .helper
+                                    }
+                                    return value
+                                })
         }
         return ProcessMemoryScan(groups: groups, complete: Int(found) < capacity,
-                                 limited: candidates.count > ProcessesEngine.maxGroups || selected.reduce(0, { $0 + $1.members.count }) > 512, unknownPIDs: unknown, chatLinks: links)
+                                 limited: candidates.count > ProcessesEngine.maxGroups || selected.reduce(0, { $0 + $1.members.count }) > 512, unknownPIDs: unknown, chatLinks: links, helperExports: helpers)
     }
     private static func identity(_ pid: Int32) -> proc_bsdinfo? {
         var info = proc_bsdinfo()

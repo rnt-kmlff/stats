@@ -60,7 +60,11 @@ final class ProcessesMonitor {
         configuration = value; generation += 1
         if let data = try? JSONEncoder().encode(value) { UserDefaults.standard.set(data, forKey: Self.preferencesKey) }
         let revision = generation
-        queue.async { [weak self] in self?.workerGeneration = revision; self?.engine.configure(value); self?.tick() }
+        queue.async { [weak self] in
+            self?.workerGeneration = revision
+            if !value.linkChats || !value.helperExports { ProcessMemoryCollector.clearHelperExports() }
+            self?.engine.configure(value); self?.tick()
+        }
         refreshNotificationStatus()
     }
     func select(_ key: String) {
@@ -78,7 +82,7 @@ final class ProcessesMonitor {
                     roleStatus: "Role readings paused", isSampling: false)
             return
         }
-        let scan = ProcessMemoryCollector.scan(linkChats: engine.configuration.linkChats)
+        let scan = ProcessMemoryCollector.scan(linkChats: engine.configuration.linkChats, helperExports: engine.configuration.helperExports)
         var value = engine.update(scan.groups, complete: scan.complete, time: time, unknownPIDs: scan.unknownPIDs)
         value.limited = value.limited || scan.limited
         let sampled = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
@@ -90,7 +94,17 @@ final class ProcessesMonitor {
         if links.limited { linkStatus += " Chat-link sample limit reached." }
         if !scan.complete || !scan.unknownPIDs.isEmpty { linkStatus += " Some process metadata is missing; totals cover the observed subset." }
         if links.unavailable > 0 { linkStatus += " Some process tags are unavailable." }
-        if !links.metadataAvailable && !links.owners.isEmpty { linkStatus += " Local chat titles unavailable." }
+        if !links.metadataAvailable && (!links.owners.isEmpty || !scan.helperExports.records.isEmpty) { linkStatus += " Local chat titles unavailable." }
+        if engine.configuration.helperExports {
+            let helperUsage = SharedHelperUsage.summarize(scan.groups.flatMap { $0.members })
+            let total = helperUsage.total
+            let bytes = total.missing == total.processes && total.missing > 0 ? "Unavailable" : Self.memory(total.bytes) + (total.missing > 0 ? " + unknown" : "")
+            let chats = "\(helperUsage.overflow ? "at least " : "")\(helperUsage.chatCount) observed chat(s)"
+            linkStatus += "\nShared helper associations: \(total.processes) helper(s), \(bytes), seen in \(chats). " +
+                "Included in shared/unlinked RAM; never a per-chat allocation."
+            if scan.helperExports.limited { linkStatus += " Export sample limit reached." }
+            if scan.helperExports.unavailable > 0 { linkStatus += " Some exports were rejected or unavailable." }
+        }
         let roles = ProcessRoleUsage.summarize(scan.groups.flatMap { $0.members }).map { role in
             let total = role.total
             let bytes = total.missing == total.processes ? "Unavailable" : Self.memory(total.bytes) + (total.missing > 0 ? " + unknown" : "")
@@ -177,6 +191,7 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
     private let enabled = NSButton(checkboxWithTitle: "Monitor processes", target: nil, action: nil)
     private let alerts = NSButton(checkboxWithTitle: "Memory alerts", target: nil, action: nil)
     private let linkChats = NSButton(checkboxWithTitle: "Link Codex chats", target: nil, action: nil)
+    private let helperExports = NSButton(checkboxWithTitle: "Use shared helper associations", target: nil, action: nil)
     private var inputs: [String: NSTextField] = [:]
     private let custom = NSButton(checkboxWithTitle: "Custom alerts for selected row", target: nil, action: nil)
     private let apply = NSButton(title: "Apply custom limits", target: nil, action: nil)
@@ -194,8 +209,10 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         let stack = scroller.stackView
         let controls = NSStackView(views: [enabled, alerts, linkChats])
         controls.orientation = .horizontal; controls.spacing = 20
-        for button in [enabled, alerts, linkChats] { button.target = self; button.action = #selector(changeToggles) }
+        for button in [enabled, alerts, linkChats, helperExports] { button.target = self; button.action = #selector(changeToggles) }
         stack.addArrangedSubview(controls)
+        stack.addArrangedSubview(helperExports)
+        stack.addArrangedSubview(label("Optional: show chats seen by cooperating helpers. Their RAM stays shared."))
         stack.addArrangedSubview(label("Read-only · one hour of session history · peak since process discovery"))
         summary.font = .systemFont(ofSize: 11); summary.textColor = .secondaryLabelColor
         stack.addArrangedSubview(summary)
@@ -287,6 +304,7 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
     private func loadControls() {
         let c = monitor.configuration
         enabled.state = c.enabled ? .on : .off; alerts.state = c.alerts ? .on : .off; linkChats.state = c.linkChats ? .on : .off
+        helperExports.state = c.helperExports ? .on : .off; helperExports.isEnabled = c.linkChats
         let values = [("assistantBudget", c.assistant.budgetGB), ("assistantGrowth", c.assistant.growthGB),
                       ("jobsBudget", c.jobs.budgetGB), ("jobsGrowth", c.jobs.growthGB),
                       ("duration", c.sustainedSeconds), ("cooldown", c.cooldownSeconds)]
@@ -302,7 +320,8 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
     }
     @objc private func changeToggles() {
         var c = monitor.configuration
-        c.enabled = enabled.state == .on; c.alerts = alerts.state == .on; c.linkChats = linkChats.state == .on
+        c.enabled = enabled.state == .on; c.alerts = alerts.state == .on; c.linkChats = linkChats.state == .on; c.helperExports = helperExports.state == .on
+        helperExports.isEnabled = c.linkChats
         monitor.setConfiguration(c)
     }
     @objc private func saveDefaults() {
@@ -373,7 +392,11 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         if let row = selectedRow() {
             let age = "\(row.isGroup ? "root age" : "age") \(ProcessAge.label(row.age))"
             selectedTitle.stringValue = "\(row.name) · PID \(row.pid) · \(row.role.rawValue) · \(age) · one-hour history"
-            selectedChat.stringValue = monitor.configuration.linkChats ? "Chat: \(row.chat?.label ?? "Shared / unlinked") · Current tag; graph is process history." : ""
+            if monitor.configuration.linkChats, monitor.configuration.helperExports, let helper = row.helper {
+                selectedChat.stringValue = "\(helper.label) · Seen during this lifetime; this footprint remains shared. Graph is process history."
+            } else {
+                selectedChat.stringValue = monitor.configuration.linkChats ? "Chat: \(row.chat?.label ?? "Shared / unlinked") · Current tag; graph is process history." : ""
+            }
             let rule = monitor.configuration.overrides[row.key] ?? monitor.configuration.rule(for: row.kind)
             if !inspectorDirty && !(window?.firstResponder is NSTextView) {
                 custom.state = monitor.configuration.overrides[row.key] == nil ? .off : .on
@@ -413,7 +436,10 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         case "name": cell.stringValue = "\(row.name) [\(row.pid)]"
         case "role": cell.stringValue = row.role.rawValue
         case "age": cell.stringValue = ProcessAge.label(row.age)
-        case "chat": cell.stringValue = monitor.configuration.linkChats ? row.chat?.label ?? (row.isGroup ? "Shared / unlinked" : "Unlinked") : "Off"
+        case "chat":
+            if !monitor.configuration.linkChats { cell.stringValue = "Off" }
+            else if monitor.configuration.helperExports, let helper = row.helper { cell.stringValue = helper.label }
+            else { cell.stringValue = row.chat?.label ?? (row.isGroup ? "Shared / unlinked" : "Unlinked") }
         case "ram": cell.stringValue = row.current.map(ProcessesMonitor.memory) ?? "—"
         case "peak": cell.stringValue = ProcessesMonitor.memory(row.peak)
         case "growth": cell.stringValue = row.growth.map { String(format: "%+.2f GB", $0 / 1073741824) } ?? "—"
@@ -422,6 +448,8 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         cell.setAccessibilityLabel("\(column.title): \(cell.stringValue)")
         if column.identifier.rawValue == "age" {
             cell.toolTip = "Since OS process start; group uses its root process. Last observed age while paused or exited."
+        } else if column.identifier.rawValue == "chat", monitor.configuration.helperExports, let helper = row.helper {
+            cell.toolTip = helper.label + " · Cooperating helper association; RAM stays shared, including when one chat has been seen."
         } else if column.identifier.rawValue == "chat", let chat = row.chat {
             cell.toolTip = "\(cell.stringValue) · \(chat.id) · Local process tag; shared app memory excluded."
         } else { cell.toolTip = cell.stringValue }
