@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F01300000000000000000104 /* CodexChatAttribution.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000004 /* CodexChatAttribution.swift */; };
+		F01300000000000000000103 /* CodexChatAttributionCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000003 /* CodexChatAttributionCore.swift */; };
 		F01300000000000000000102 /* ProcessesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000002 /* ProcessesView.swift */; };
 		F01300000000000000000101 /* ProcessMemoryCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000001 /* ProcessMemoryCollector.swift */; };
 		F01300000000000000000100 /* ProcessMonitorCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000000 /* ProcessMonitorCore.swift */; };
@@ -537,6 +539,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F01300000000000000000004 /* CodexChatAttribution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexChatAttribution.swift; sourceTree = "<group>"; };
+		F01300000000000000000003 /* CodexChatAttributionCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexChatAttributionCore.swift; sourceTree = "<group>"; };
 		F01300000000000000000002 /* ProcessesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessesView.swift; sourceTree = "<group>"; };
 		F01300000000000000000001 /* ProcessMemoryCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMemoryCollector.swift; sourceTree = "<group>"; };
 		F01300000000000000000000 /* ProcessMonitorCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMonitorCore.swift; sourceTree = "<group>"; };
@@ -1215,6 +1219,8 @@
 			isa = PBXGroup;
 			children = (
 				F01300000000000000000000 /* ProcessMonitorCore.swift */,
+				F01300000000000000000004 /* CodexChatAttribution.swift */,
+				F01300000000000000000003 /* CodexChatAttributionCore.swift */,
 				F01300000000000000000001 /* ProcessMemoryCollector.swift */,
 				F01300000000000000000002 /* ProcessesView.swift */,
 				9A81C74C24499C7000825D92 /* Settings.swift */,
@@ -2231,6 +2237,8 @@
 				9A9EA9452476D34500E3B883 /* Update.swift in Sources */,
 				9A045EB72594F8D100ED58F2 /* Dashboard.swift in Sources */,
 				F01300000000000000000100 /* ProcessMonitorCore.swift in Sources */,
+				F01300000000000000000104 /* CodexChatAttribution.swift in Sources */,
+				F01300000000000000000103 /* CodexChatAttributionCore.swift in Sources */,
 				F01300000000000000000101 /* ProcessMemoryCollector.swift in Sources */,
 				F01300000000000000000102 /* ProcessesView.swift in Sources */,
 				9A81C74E24499C7000825D92 /* Settings.swift in Sources */,

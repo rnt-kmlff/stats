@@ -6,11 +6,12 @@ struct ProcessMemoryScan {
     let complete: Bool
     let limited: Bool
     var unknownPIDs: Set<Int32> = []
+    var chatLinks = CodexChatLinkScan()
 }
 
 struct ProcessMemoryCollector {
-    // No task ports, administrator rights, command arguments or environment reads.
-    static func scan() -> ProcessMemoryScan {
+    // No task ports or administrator rights. Optional chat linking follows its reviewed metadata contract.
+    static func scan(linkChats: Bool = false) -> ProcessMemoryScan {
         let count = proc_listallpids(nil, 0)
         guard count > 0 else { return ProcessMemoryScan(groups: [], complete: false, limited: false) }
         let capacity = min(8192, max(1024, Int(count) + 256))
@@ -46,12 +47,14 @@ struct ProcessMemoryCollector {
                 if let bytes = footprint(process.id) { measured[process.id] = bytes }
             }
         }
+        let live = selected.flatMap { $0.members }.map { p in var value = p; value.footprint = measured[p.id]; return value }
+        let links = CodexChatAttribution.scan(live, enabled: linkChats)
         let groups = selected.map { group in
             WatchedProcessGroup(key: group.key, root: group.root, kind: group.kind,
-                                members: group.members.map { p in var value = p; value.footprint = measured[p.id]; return value })
+                                members: group.members.map { p in var value = p; value.footprint = measured[p.id]; value.chat = links.owners[p.id]; return value })
         }
         return ProcessMemoryScan(groups: groups, complete: Int(found) < capacity,
-                                 limited: candidates.count > ProcessesEngine.maxGroups || selected.reduce(0, { $0 + $1.members.count }) > 512, unknownPIDs: unknown)
+                                 limited: candidates.count > ProcessesEngine.maxGroups || selected.reduce(0, { $0 + $1.members.count }) > 512, unknownPIDs: unknown, chatLinks: links)
     }
     private static func identity(_ pid: Int32) -> proc_bsdinfo? {
         var info = proc_bsdinfo()

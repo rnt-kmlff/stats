@@ -17,6 +17,8 @@ final class ProcessesMonitor {
     private(set) var snapshot = ProcessesSnapshot()
     private(set) var status = "Waiting for first sample"
     private(set) var notificationStatus = "Alerts off"
+    private(set) var chatUsage = CodexChatUsage(linked: [], unlinked: CodexChatTotal(chat: nil))
+    private(set) var chatStatus = "Chat links off"
     var onUpdate: (() -> Void)?
 
     private init() {
@@ -69,23 +71,33 @@ final class ProcessesMonitor {
     private func tick() {
         let time = ProcessInfo.processInfo.systemUptime
         guard engine.configuration.enabled, !workerPaused, !sleeping else {
-            publish(engine.pause(time: time), status: sleeping ? "Sleeping" : workerPaused ? "Paused with Stats" : "Monitoring off")
+            publish(engine.pause(time: time), status: sleeping ? "Sleeping" : workerPaused ? "Paused with Stats" : "Monitoring off",
+                    chatUsage: CodexChatUsage(linked: [], unlinked: CodexChatTotal(chat: nil)), chatStatus: "Chat readings paused")
             return
         }
-        let scan = ProcessMemoryCollector.scan()
+        let scan = ProcessMemoryCollector.scan(linkChats: engine.configuration.linkChats)
         var value = engine.update(scan.groups, complete: scan.complete, time: time, unknownPIDs: scan.unknownPIDs)
         value.limited = value.limited || scan.limited
         let sampled = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         let status = !scan.complete ? "Process scan unavailable" : value.limited
             ? "Sample limit reached; some processes are omitted" : "Sampled \(sampled) · every 5 seconds"
-        publish(value, status: status)
+        let usage = CodexChatUsage.summarize(scan.groups.flatMap { $0.members })
+        let links = scan.chatLinks
+        var linkStatus = "Task RAM covers observed tagged processes only; shared app memory stays unassigned."
+        if links.limited { linkStatus += " Chat-link sample limit reached." }
+        if !scan.complete || !scan.unknownPIDs.isEmpty { linkStatus += " Some process metadata is missing; totals cover the observed subset." }
+        if links.unavailable > 0 { linkStatus += " Some process tags are unavailable." }
+        if !links.metadataAvailable && !links.owners.isEmpty { linkStatus += " Local chat titles unavailable." }
+        publish(value, status: status, chatUsage: usage, chatStatus: linkStatus)
     }
-    private func publish(_ value: ProcessesSnapshot, status: String?) {
+    private func publish(_ value: ProcessesSnapshot, status: String?, chatUsage: CodexChatUsage? = nil, chatStatus: String? = nil) {
         let revision = workerGeneration
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.snapshot = value
             if let status { self.status = status }
+            if let chatUsage { self.chatUsage = chatUsage }
+            if let chatStatus { self.chatStatus = chatStatus }
             self.onUpdate?()
             if self.generation == revision && self.configuration.alerts && self.configuration.enabled && !UserDefaults.standard.bool(forKey: "pause") {
                 value.alerts.forEach { self.sendAlert(title: $0.reason, body: "\($0.name): \(Self.memory($0.bytes)). Open Processes to inspect the history.") }
@@ -142,6 +154,8 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
     private let summary = NSTextField(labelWithString: "")
     private let selectedTitle = NSTextField(labelWithString: "Select a row for history and custom alerts")
     private let notifications = NSTextField(labelWithString: "")
+    private let chatSummary = NSTextField(wrappingLabelWithString: "")
+    private let selectedChat = NSTextField(wrappingLabelWithString: "")
     private let validation = NSTextField(labelWithString: "")
     private var rows: [ProcessMemoryRow] = []
     private var selecting = false
@@ -149,6 +163,7 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
     private var displayedKey: String?
     private let enabled = NSButton(checkboxWithTitle: "Monitor processes", target: nil, action: nil)
     private let alerts = NSButton(checkboxWithTitle: "Memory alerts", target: nil, action: nil)
+    private let linkChats = NSButton(checkboxWithTitle: "Link Codex chats", target: nil, action: nil)
     private var inputs: [String: NSTextField] = [:]
     private let custom = NSButton(checkboxWithTitle: "Custom alerts for selected row", target: nil, action: nil)
     private let apply = NSButton(title: "Apply custom limits", target: nil, action: nil)
@@ -164,13 +179,15 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         scroller.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
         scroller.heightAnchor.constraint(equalTo: heightAnchor).isActive = true
         let stack = scroller.stackView
-        let controls = NSStackView(views: [enabled, alerts])
+        let controls = NSStackView(views: [enabled, alerts, linkChats])
         controls.orientation = .horizontal; controls.spacing = 20
-        for button in [enabled, alerts] { button.target = self; button.action = #selector(changeToggles) }
+        for button in [enabled, alerts, linkChats] { button.target = self; button.action = #selector(changeToggles) }
         stack.addArrangedSubview(controls)
         stack.addArrangedSubview(label("Read-only · one hour of session history · peak since process discovery"))
         summary.font = .systemFont(ofSize: 11); summary.textColor = .secondaryLabelColor
         stack.addArrangedSubview(summary)
+        chatSummary.font = .systemFont(ofSize: 11); chatSummary.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(chatSummary)
 
         let tableScroll = NSScrollView()
         tableScroll.hasVerticalScroller = true; tableScroll.hasHorizontalScroller = true
@@ -178,7 +195,9 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         outline.headerView = NSTableHeaderView()
         outline.rowHeight = 24; outline.usesAlternatingRowBackgroundColors = true
         outline.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
-        for (key, title, width) in [("name", "Process / group", 185.0), ("ram", "RAM", 70.0), ("peak", "Peak", 70.0), ("growth", "Δ 5 min", 70.0), ("status", "Status", 82.0)] {
+        let columns = [("name", "Process / group", 155.0), ("chat", "Codex chat", 170.0), ("ram", "RAM", 60.0),
+                       ("peak", "Peak", 60.0), ("growth", "Δ 5 min", 65.0), ("status", "Status", 65.0)]
+        for (key, title, width) in columns {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(key))
             column.title = title; column.width = width; column.minWidth = 55
             outline.addTableColumn(column)
@@ -191,6 +210,8 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         stack.addArrangedSubview(tableScroll)
         selectedTitle.font = .boldSystemFont(ofSize: 12)
         stack.addArrangedSubview(selectedTitle)
+        selectedChat.font = .systemFont(ofSize: 11); selectedChat.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(selectedChat)
         graph.heightAnchor.constraint(equalToConstant: 110).isActive = true
         stack.addArrangedSubview(graph)
         stack.addArrangedSubview(label("Group RAM is the sum of member footprints. Separately listed local jobs are excluded from the app group. Gaps mean missing data; short spikes may be missed."))
@@ -216,7 +237,8 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         notifications.font = .systemFont(ofSize: 11); notifications.textColor = .secondaryLabelColor
         stack.addArrangedSubview(notifications)
         stack.addArrangedSubview(label("Local jobs include Node, Python and common build tools; names alone do not prove a build is running. " +
-                                      "Shared app processes cannot identify an individual chat. History stays in memory and clears when Stats quits."))
+                                      "Chat labels require a local process tag; shared app memory is not assigned to a chat. Only local chat ID/name metadata is used. " +
+                                      "History and labels stay in memory and clear when Stats quits."))
         for view in stack.arrangedSubviews where view is NSTextField || view === tableScroll || view === graph {
             view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
         }
@@ -247,7 +269,7 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
     }
     private func loadControls() {
         let c = monitor.configuration
-        enabled.state = c.enabled ? .on : .off; alerts.state = c.alerts ? .on : .off
+        enabled.state = c.enabled ? .on : .off; alerts.state = c.alerts ? .on : .off; linkChats.state = c.linkChats ? .on : .off
         let values = [("assistantBudget", c.assistant.budgetGB), ("assistantGrowth", c.assistant.growthGB),
                       ("jobsBudget", c.jobs.budgetGB), ("jobsGrowth", c.jobs.growthGB),
                       ("duration", c.sustainedSeconds), ("cooldown", c.cooldownSeconds)]
@@ -263,7 +285,7 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
     }
     @objc private func changeToggles() {
         var c = monitor.configuration
-        c.enabled = enabled.state == .on; c.alerts = alerts.state == .on
+        c.enabled = enabled.state == .on; c.alerts = alerts.state == .on; c.linkChats = linkChats.state == .on
         monitor.setConfiguration(c)
     }
     @objc private func saveDefaults() {
@@ -282,7 +304,9 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         guard let selected = selectedRow() else { return }
         var c = monitor.configuration
         if custom.state == .on {
-            guard c.overrides[selected.key] != nil || c.overrides.count < 20 else { validation.textColor = .systemRed; validation.stringValue = "The 20 custom-limit slots are full. Remove an existing custom limit first."; return }
+            guard c.overrides[selected.key] != nil || c.overrides.count < 20 else {
+                validation.textColor = .systemRed; validation.stringValue = "The 20 custom-limit slots are full. Remove an existing custom limit first."; return
+            }
             guard let budget = number("customBudget", range: 0.05...128), let growth = number("customGrowth", range: 0...128) else { return }
             c.overrides[selected.key] = MemoryAlertRule(budgetGB: budget, growthGB: growth)
         } else { c.overrides.removeValue(forKey: selected.key) }
@@ -325,8 +349,12 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         graph.points = value.history; graph.needsDisplay = true
         summary.stringValue = monitor.status
         notifications.stringValue = monitor.notificationStatus
+        chatSummary.isHidden = !monitor.configuration.linkChats
+        chatSummary.stringValue = monitor.configuration.linkChats ? chatSummaryText() : ""
+        selectedChat.isHidden = !monitor.configuration.linkChats
         if let row = selectedRow() {
             selectedTitle.stringValue = "\(row.name) · PID \(row.pid) · one-hour history"
+            selectedChat.stringValue = monitor.configuration.linkChats ? "Chat: \(row.chat?.label ?? "Shared / unlinked") · Current tag; graph is process history." : ""
             let rule = monitor.configuration.overrides[row.key] ?? monitor.configuration.rule(for: row.kind)
             if !inspectorDirty && !(window?.firstResponder is NSTextView) {
                 custom.state = monitor.configuration.overrides[row.key] == nil ? .off : .on
@@ -334,7 +362,20 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
                 inputs["customGrowth"]?.stringValue = String(format: "%g", rule.growthGB)
             }
             apply.isEnabled = true
-        } else { selectedTitle.stringValue = "No matching processes; sampling continues"; apply.isEnabled = false }
+        } else { selectedTitle.stringValue = "No matching processes; sampling continues"; selectedChat.stringValue = ""; apply.isEnabled = false }
+    }
+    private func chatSummaryText() -> String {
+        let usage = monitor.chatUsage
+        func memory(_ total: CodexChatTotal) -> String {
+            if total.missing == total.processes && total.missing > 0 { return "Unavailable" }
+            return ProcessesMonitor.memory(total.bytes) + (total.missing > 0 ? " + unknown" : "")
+        }
+        var lines = [monitor.chatStatus]
+        if usage.linked.isEmpty { lines.append("No tagged task processes found in this sample.") }
+        for total in usage.linked.prefix(8) { lines.append("\(total.chat?.label ?? "Chat"): \(memory(total)) · \(total.processes) process(es)") }
+        if usage.linked.count > 8 { lines.append("\(usage.linked.count - 8) additional linked chats; inspect the process rows.") }
+        lines.append("Shared / unlinked: \(memory(usage.unlinked)) · \(usage.unlinked.processes) process(es)")
+        return lines.joined(separator: "\n")
     }
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int { (item as? ProcessMemoryRow)?.children.count ?? rows.count }
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any { (item as? ProcessMemoryRow)?.children[index] ?? rows[index] }
@@ -346,12 +387,13 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         cell.lineBreakMode = .byTruncatingTail
         switch column.identifier.rawValue {
         case "name": cell.stringValue = "\(row.name) [\(row.pid)]"
+        case "chat": cell.stringValue = monitor.configuration.linkChats ? row.chat?.label ?? (row.isGroup ? "Shared / unlinked" : "Unlinked") : "Off"
         case "ram": cell.stringValue = row.current.map(ProcessesMonitor.memory) ?? "—"
         case "peak": cell.stringValue = ProcessesMonitor.memory(row.peak)
         case "growth": cell.stringValue = row.growth.map { String(format: "%+.2f GB", $0 / 1073741824) } ?? "—"
         default: cell.stringValue = row.status
         }
-        cell.toolTip = cell.stringValue
+        cell.toolTip = column.identifier.rawValue == "chat" && row.chat != nil ? "\(cell.stringValue) · \(row.chat?.id ?? "") · Local process tag; shared app memory excluded." : cell.stringValue
         return cell
     }
     func outlineViewSelectionDidChange(_ notification: Notification) {
