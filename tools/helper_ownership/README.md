@@ -31,7 +31,7 @@ if associations is not None:
     associations.close()
 ```
 
-The Node adapter uses the included Python bridge with `/usr/bin/python3` by default to read its direct parent's kernel identity and publish safely. It accepts no arbitrary target PID. This small subprocess runs only on an association change, with a one-second timeout and bounded input/output; repeated calls for a known chat do not spawn or write. Python publishes its own kernel identity directly. There is no background heartbeat. Follow the local memory guardrails for the actual helper workload.
+The Node adapter uses the included Python bridge with `/usr/bin/python3` by default to read its direct parent's kernel identity and publish safely. It accepts no arbitrary target PID. This small subprocess runs only on an association change, with a one-second timeout and bounded input/output; repeated calls for a known chat do not spawn or write. Python publishes its own kernel identity directly. Use the actual Python executable with the Node `python` option if a system launcher inserts an intermediate parent; the bridge refuses a parent mismatch rather than walking ancestors. `lastStatus` supplies a bounded reason code without stderr or payload logging. There is no background heartbeat. Follow the local memory guardrails for the actual helper workload.
 
 ## Local protocol and limits
 

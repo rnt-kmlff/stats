@@ -6,6 +6,7 @@ import stat
 import tempfile
 import select
 import subprocess
+import sys
 import unittest
 from unittest import mock
 
@@ -126,7 +127,7 @@ class ExportTests(unittest.TestCase):
         node = os.environ.get('STATS_TEST_NODE', 'node')
         environment = {k: v for k, v in os.environ.items() if k not in ('CODEX_THREAD_ID', 'CODEX_SESSION_ID')}
         demo = MODULE.with_name('demo.mjs')
-        process = subprocess.Popen([node, '--max-old-space-size=64', str(demo), str(self.base)],
+        process = subprocess.Popen([node, '--max-old-space-size=64', str(demo), str(self.base), sys.executable],
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    text=True, env=environment)
         def read():
@@ -140,7 +141,8 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(read()['pid'], process.pid)
             self.assertFalse(observe('synthetic invalid value')['ok'])
             self.assertEqual(list(self.base.iterdir()), [])
-            self.assertTrue(observe(A)['ok'])
+            first = observe(A)
+            self.assertTrue(first['ok'], first.get('status'))
             files = list((self.base / 'Stats Helper Ownership/v1').glob('*.json'))
             self.assertEqual(len(files), 1)
             record = json.loads(files[0].read_text())

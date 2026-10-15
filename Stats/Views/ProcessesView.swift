@@ -437,9 +437,9 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         case "role": cell.stringValue = row.role.rawValue
         case "age": cell.stringValue = ProcessAge.label(row.age)
         case "chat":
-            if !monitor.configuration.linkChats { cell.stringValue = "Off" }
-            else if monitor.configuration.helperExports, let helper = row.helper { cell.stringValue = helper.label }
-            else { cell.stringValue = row.chat?.label ?? (row.isGroup ? "Shared / unlinked" : "Unlinked") }
+            if !monitor.configuration.linkChats { cell.stringValue = "Off" } else if monitor.configuration.helperExports, let helper = row.helper {
+                cell.stringValue = helper.label
+            } else { cell.stringValue = row.chat?.label ?? (row.isGroup ? "Shared / unlinked" : "Unlinked") }
         case "ram": cell.stringValue = row.current.map(ProcessesMonitor.memory) ?? "—"
         case "peak": cell.stringValue = ProcessesMonitor.memory(row.peak)
         case "growth": cell.stringValue = row.growth.map { String(format: "%+.2f GB", $0 / 1073741824) } ?? "—"

@@ -15,6 +15,7 @@ export class HelperOwnershipExporter {
     this.dirty = false;
     this.published = false;
     this.closed = false;
+    this.lastStatus = "not_published";
     this.onExit = () => this.close();
     process.once('exit', this.onExit);
   }
@@ -38,10 +39,14 @@ export class HelperOwnershipExporter {
         input: JSON.stringify({ instanceId: this.instance, chatIds: [...this.chats].sort(), overflow: this.overflow, close }),
         encoding: 'utf8', timeout: 1000, maxBuffer: 2048, windowsHide: true
       });
-      if (child.status !== 0 || child.error) return false;
+      if (child.error) { this.lastStatus = child.error.code === 'ETIMEDOUT' ? 'bridge_timeout' : 'bridge_unavailable'; return false; }
+      if (child.status !== 0) { this.lastStatus = 'bridge_exit'; return false; }
       const result = JSON.parse(child.stdout);
-      return result.ok === true && result.identity?.pid === process.pid && result.identity?.uid === process.getuid();
-    } catch { return false; }
+      if (result.ok !== true) { this.lastStatus = 'export_rejected'; return false; }
+      if (result.identity?.pid !== process.pid || result.identity?.uid !== process.getuid()) { this.lastStatus = 'identity_mismatch'; return false; }
+      this.lastStatus = 'published';
+      return true;
+    } catch { this.lastStatus = 'bridge_response_unavailable'; return false; }
   }
   close() {
     if (this.closed || process.pid !== this.pid) return;

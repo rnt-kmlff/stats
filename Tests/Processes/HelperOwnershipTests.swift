@@ -191,9 +191,13 @@ struct HelperOwnershipTests {
             }
         }
         check("legacy preferences keep helper reading off") {
-            var data = try! JSONSerialization.jsonObject(with: JSONEncoder().encode(ProcessesConfiguration())) as! [String: Any]
-            data.removeValue(forKey: "helperExports")
-            return !(try! JSONDecoder().decode(ProcessesConfiguration.self, from: JSONSerialization.data(withJSONObject: data))).helperExports
+            do {
+                let encoded = try JSONEncoder().encode(ProcessesConfiguration())
+                guard var data = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] else { return false }
+                data.removeValue(forKey: "helperExports")
+                let legacy = try JSONSerialization.data(withJSONObject: data)
+                return !(try JSONDecoder().decode(ProcessesConfiguration.self, from: legacy)).helperExports
+            } catch { return false }
         }
     }
 }
