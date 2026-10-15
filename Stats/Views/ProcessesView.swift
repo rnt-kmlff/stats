@@ -271,8 +271,8 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         notifications.font = .systemFont(ofSize: 11); notifications.textColor = .secondaryLabelColor
         stack.addArrangedSubview(notifications)
         stack.addArrangedSubview(label("Local jobs include Node, Python and common build tools; names alone do not prove a build is running. " +
-                                      "Chat labels require a local process tag; shared app memory is not assigned to a chat. Only local chat ID/name metadata is used. " +
-                                      "History and labels stay in memory and clear when Stats quits."))
+                                      "Chat links use local process tags or optional shared helper exports. Shared RAM is never allocated to a chat. " +
+                                      "History and displayed chat names clear when Stats quits. Cooperating helpers manage their own local chat-ID files."))
         for view in stack.arrangedSubviews where view is NSTextField || view === tableScroll || view === graph {
             view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
         }
