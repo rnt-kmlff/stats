@@ -11,5 +11,6 @@ with tempfile.TemporaryDirectory(prefix="stats-process-tests-") as output:
                     str(root / "Stats/Views/CodexChatAttribution.swift"),
                     str(root / "Stats/Views/ProcessMemoryCollector.swift"),
                     str(root / "Tests/Processes/ChatMetadataTests.swift"),
+                    str(root / "Tests/Processes/ProcessInspectionTests.swift"),
                     str(root / "Tests/Processes/ProcessesTests.swift"), "-o", str(output / "process-tests")], check=True)
     subprocess.run([str(output / "process-tests")], check=True)
