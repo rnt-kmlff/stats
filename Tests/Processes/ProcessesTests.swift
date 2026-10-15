@@ -275,6 +275,7 @@ struct ProcessesTests {
             let text = CodexChatOwnership.cleanTitle("  Synthetic\nWorkbook\u{202E}" + String(repeating: "x", count: 200))
             return text?.count == 120 && !(text?.contains("\n") ?? true) && !(text?.contains("\u{202E}") ?? true)
         }
+        HelperOwnershipTests.run()
         ProcessInspectionTests.run()
         ChatMetadataTests.run()
         print("Executed \(passed) process monitoring tests, 0 failures")

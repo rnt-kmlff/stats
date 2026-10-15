@@ -2,7 +2,7 @@ name: Processes preview build
 
 on:
   push:
-    branches: [codex/processes-view, codex/chat-attribution, codex/process-details]
+    branches: [codex/processes-view, codex/chat-attribution, codex/process-details, codex/helper-ownership]
   workflow_dispatch:
 
 permissions:
@@ -42,16 +42,18 @@ jobs:
           APP=build/DerivedData/Build/Products/Release/Stats.app
           test -d "$APP"
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")" = 3.0.21
-          /usr/libexec/PlistBuddy -c "Add :ForkFeature string Processes-preview-3-process-details" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :ForkFeature string Processes-preview-4-helper-ownership" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :ForkBuildRevision string $GITHUB_SHA" "$APP/Contents/Info.plist"
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict "$APP"
           mkdir -p processes-artifact
           ditto "$APP" processes-artifact/Stats.app
           cp LICENSE processes-artifact/LICENSE
+          mkdir -p processes-artifact/helper_ownership
+          cp tools/helper_ownership/stats_helper_ownership.py tools/helper_ownership/stats_helper_ownership.mjs tools/helper_ownership/demo.mjs tools/helper_ownership/README.md processes-artifact/helper_ownership/
           python3 - <<'PYREC'
           import json, os, subprocess, pathlib
-          receipt = {"upstream_revision": "ac791a10a53b0457a467e7ee341b512ad9413e03", "candidate_revision": os.environ["GITHUB_SHA"], "repository": os.environ["GITHUB_REPOSITORY"], "run_id": os.environ["GITHUB_RUN_ID"], "version": "3.0.21", "architecture": "arm64", "application_source_changed": True, "feature": "Processes-preview-3-process-details", "signature": "ad hoc local-development signature", "notarized": False, "xcode": subprocess.check_output(["xcodebuild", "-version"], text=True)}
+          receipt = {"upstream_revision": "ac791a10a53b0457a467e7ee341b512ad9413e03", "candidate_revision": os.environ["GITHUB_SHA"], "repository": os.environ["GITHUB_REPOSITORY"], "run_id": os.environ["GITHUB_RUN_ID"], "version": "3.0.21", "architecture": "arm64", "application_source_changed": True, "feature": "Processes-preview-4-helper-ownership", "signature": "ad hoc local-development signature", "notarized": False, "xcode": subprocess.check_output(["xcodebuild", "-version"], text=True)}
           pathlib.Path("processes-artifact/build-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
           PYREC
           ditto -c -k --keepParent processes-artifact Stats-processes-preview.zip

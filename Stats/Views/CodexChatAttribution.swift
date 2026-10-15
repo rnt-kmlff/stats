@@ -8,14 +8,16 @@ struct CodexChatLinkScan {
     var unavailable = 0
     var tagReads = 0
     var metadataAvailable = false
+    var titles: [String: String] = [:]
 }
 
 struct CodexChatAttribution {
     static let maxReads = 64
     static let maxTitles = 20
-    static func scan(_ processes: [WatchedProcess], enabled: Bool, metadataURL: URL? = nil) -> CodexChatLinkScan {
+    static func scan(_ processes: [WatchedProcess], enabled: Bool, metadataURL: URL? = nil,
+                     sharedHelpers: Set<WatchedProcessID> = [], additionalIDs: [String] = []) -> CodexChatLinkScan {
         guard enabled else { return CodexChatLinkScan() }
-        let ordered = processes.sorted { a, b in
+        let ordered = processes.filter { !sharedHelpers.contains($0.id) }.sorted { a, b in
             if ProcessGrouping.isBuildTool(a) != ProcessGrouping.isBuildTool(b) { return ProcessGrouping.isBuildTool(a) }
             return a.footprint == b.footprint ? a.id.pid < b.id.pid : (a.footprint ?? 0) > (b.footprint ?? 0)
         }
@@ -26,10 +28,11 @@ struct CodexChatAttribution {
             guard let tag = readTag(process.id) else { result.unavailable += 1; continue }
             if case let .linked(id) = tag { tags[process.id] = id }
         }
-        let ids = Array(Set(tags.values)).sorted()
+        let ids = Array(Set(Array(tags.values) + additionalIDs)).sorted()
         let titleIDs = Array(ids.prefix(maxTitles))
         let metadata = metadataURL.map { CodexChatTitles.read(ids: titleIDs, databaseURL: $0) } ?? CodexChatTitles.read(ids: titleIDs)
         result.metadataAvailable = metadata.available
+        result.titles = metadata.titles
         result.limited = result.limited || ids.count > maxTitles
         for (process, id) in tags { result.owners[process] = CodexChatOwnership(id: id, title: metadata.titles[id]) }
         return result

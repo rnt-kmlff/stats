@@ -78,15 +78,15 @@ struct CodexChatUsage {
     var linked: [CodexChatTotal]
     var unlinked: CodexChatTotal
     static func commonOwner(_ processes: [WatchedProcess]) -> CodexChatOwnership? {
-        guard let first = processes.first?.chat, processes.allSatisfy({ $0.chat?.id == first.id }) else { return nil }
+        guard let first = processes.first?.chat, processes.allSatisfy({ $0.chat?.id == first.id && $0.helper == nil }) else { return nil }
         return first
     }
     static func uniqueProcesses(_ processes: [WatchedProcess]) -> [WatchedProcess] {
         var unique: [WatchedProcessID: WatchedProcess] = [:]
         for process in processes {
             if let existing = unique[process.id] {
-                if existing.chat?.id != process.chat?.id || existing.footprint != process.footprint || existing.role != process.role {
-                    var uncertain = process; uncertain.chat = nil; uncertain.footprint = nil; uncertain.role = .other; unique[process.id] = uncertain
+                if existing.chat?.id != process.chat?.id || existing.footprint != process.footprint || existing.role != process.role || existing.helper != process.helper {
+                    var uncertain = process; uncertain.chat = nil; uncertain.footprint = nil; uncertain.role = .other; uncertain.helper = nil; unique[process.id] = uncertain
                 }
             } else { unique[process.id] = process }
         }
@@ -96,7 +96,7 @@ struct CodexChatUsage {
         var totals: [String: CodexChatTotal] = [:]
         var unlinked = CodexChatTotal(chat: nil)
         for process in uniqueProcesses(processes) {
-            if let chat = process.chat { totals[chat.id, default: CodexChatTotal(chat: chat)].add(process) } else { unlinked.add(process) }
+            if let chat = process.chat, process.helper == nil { totals[chat.id, default: CodexChatTotal(chat: chat)].add(process) } else { unlinked.add(process) }
         }
         return CodexChatUsage(linked: totals.values.sorted { $0.bytes == $1.bytes ? ($0.chat?.id ?? "") < ($1.chat?.id ?? "") : $0.bytes > $1.bytes }, unlinked: unlinked)
     }
@@ -139,5 +139,23 @@ struct CodexChatCoverage {
             return result
         }
         linkedBytes = sum(usage.linked); measuredBytes = sum(all)
+    }
+}
+
+struct SharedHelperUsage {
+    var overflow = false
+    var total = CodexChatTotal(chat: nil)
+    var chatCount = 0
+    static func summarize(_ processes: [WatchedProcess]) -> SharedHelperUsage {
+        var result = SharedHelperUsage()
+        var ids: Set<String> = []
+        for process in CodexChatUsage.uniqueProcesses(processes) {
+            guard let helper = process.helper else { continue }
+            result.total.add(process)
+            result.overflow = result.overflow || helper.overflow
+            ids.formUnion(helper.chats.map { $0.id })
+        }
+        result.chatCount = ids.count
+        return result
     }
 }
