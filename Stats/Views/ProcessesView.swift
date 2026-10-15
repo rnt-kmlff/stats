@@ -19,6 +19,8 @@ final class ProcessesMonitor {
     private(set) var notificationStatus = "Alerts off"
     private(set) var chatUsage = CodexChatUsage(linked: [], unlinked: CodexChatTotal(chat: nil))
     private(set) var chatStatus = "Chat links off"
+    private(set) var roleStatus = "Waiting for role readings"
+    private(set) var isSampling = false
     var onUpdate: (() -> Void)?
 
     private init() {
@@ -72,7 +74,8 @@ final class ProcessesMonitor {
         let time = ProcessInfo.processInfo.systemUptime
         guard engine.configuration.enabled, !workerPaused, !sleeping else {
             publish(engine.pause(time: time), status: sleeping ? "Sleeping" : workerPaused ? "Paused with Stats" : "Monitoring off",
-                    chatUsage: CodexChatUsage(linked: [], unlinked: CodexChatTotal(chat: nil)), chatStatus: "Chat readings paused")
+                    chatUsage: CodexChatUsage(linked: [], unlinked: CodexChatTotal(chat: nil)), chatStatus: "Chat readings paused",
+                    roleStatus: "Role readings paused", isSampling: false)
             return
         }
         let scan = ProcessMemoryCollector.scan(linkChats: engine.configuration.linkChats)
@@ -88,9 +91,16 @@ final class ProcessesMonitor {
         if !scan.complete || !scan.unknownPIDs.isEmpty { linkStatus += " Some process metadata is missing; totals cover the observed subset." }
         if links.unavailable > 0 { linkStatus += " Some process tags are unavailable." }
         if !links.metadataAvailable && !links.owners.isEmpty { linkStatus += " Local chat titles unavailable." }
-        publish(value, status: status, chatUsage: usage, chatStatus: linkStatus)
+        let roles = ProcessRoleUsage.summarize(scan.groups.flatMap { $0.members }).map { role in
+            let total = role.total
+            let bytes = total.missing == total.processes ? "Unavailable" : Self.memory(total.bytes) + (total.missing > 0 ? " + unknown" : "")
+            return "\(role.role.rawValue) \(total.processes): \(bytes)"
+        }
+        let roleStatus = roles.isEmpty ? "No watched processes observed" : "Observed RAM by role · " + roles.joined(separator: " · ")
+        publish(value, status: status, chatUsage: usage, chatStatus: linkStatus, roleStatus: roleStatus, isSampling: true)
     }
-    private func publish(_ value: ProcessesSnapshot, status: String?, chatUsage: CodexChatUsage? = nil, chatStatus: String? = nil) {
+    private func publish(_ value: ProcessesSnapshot, status: String?, chatUsage: CodexChatUsage? = nil,
+                         chatStatus: String? = nil, roleStatus: String? = nil, isSampling: Bool? = nil) {
         let revision = workerGeneration
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -98,6 +108,8 @@ final class ProcessesMonitor {
             if let status { self.status = status }
             if let chatUsage { self.chatUsage = chatUsage }
             if let chatStatus { self.chatStatus = chatStatus }
+            if let roleStatus { self.roleStatus = roleStatus }
+            if let isSampling { self.isSampling = isSampling }
             self.onUpdate?()
             if self.generation == revision && self.configuration.alerts && self.configuration.enabled && !UserDefaults.standard.bool(forKey: "pause") {
                 value.alerts.forEach { self.sendAlert(title: $0.reason, body: "\($0.name): \(Self.memory($0.bytes)). Open Processes to inspect the history.") }
@@ -154,6 +166,7 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
     private let summary = NSTextField(labelWithString: "")
     private let selectedTitle = NSTextField(labelWithString: "Select a row for history and custom alerts")
     private let notifications = NSTextField(labelWithString: "")
+    private let roleSummary = NSTextField(wrappingLabelWithString: "")
     private let chatSummary = NSTextField(wrappingLabelWithString: "")
     private let selectedChat = NSTextField(wrappingLabelWithString: "")
     private let validation = NSTextField(labelWithString: "")
@@ -186,6 +199,8 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         stack.addArrangedSubview(label("Read-only · one hour of session history · peak since process discovery"))
         summary.font = .systemFont(ofSize: 11); summary.textColor = .secondaryLabelColor
         stack.addArrangedSubview(summary)
+        roleSummary.font = .systemFont(ofSize: 11); roleSummary.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(roleSummary)
         chatSummary.font = .systemFont(ofSize: 11); chatSummary.textColor = .secondaryLabelColor
         stack.addArrangedSubview(chatSummary)
 
@@ -195,8 +210,8 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         outline.headerView = NSTableHeaderView()
         outline.rowHeight = 24; outline.usesAlternatingRowBackgroundColors = true
         outline.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
-        let columns = [("name", "Process / group", 155.0), ("chat", "Codex chat", 170.0), ("ram", "RAM", 60.0),
-                       ("peak", "Peak", 60.0), ("growth", "Δ 5 min", 65.0), ("status", "Status", 65.0)]
+        let columns = [("name", "Process / group", 170.0), ("role", "Role", 90.0), ("age", "Age", 65.0), ("ram", "RAM", 60.0),
+                       ("chat", "Codex chat", 145.0), ("peak", "Peak", 60.0), ("growth", "Δ 5 min", 65.0), ("status", "Status", 65.0)]
         for (key, title, width) in columns {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(key))
             column.title = title; column.width = width; column.minWidth = 55
@@ -206,7 +221,7 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         outline.delegate = self; outline.dataSource = self
         outline.setAccessibilityLabel("Watched process memory")
         tableScroll.documentView = outline
-        tableScroll.heightAnchor.constraint(equalToConstant: 210).isActive = true
+        tableScroll.heightAnchor.constraint(equalToConstant: 230).isActive = true
         stack.addArrangedSubview(tableScroll)
         selectedTitle.font = .boldSystemFont(ofSize: 12)
         stack.addArrangedSubview(selectedTitle)
@@ -214,7 +229,9 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         stack.addArrangedSubview(selectedChat)
         graph.heightAnchor.constraint(equalToConstant: 110).isActive = true
         stack.addArrangedSubview(graph)
-        stack.addArrangedSubview(label("Group RAM is the sum of member footprints. Separately listed local jobs are excluded from the app group. Gaps mean missing data; short spikes may be missed."))
+        stack.addArrangedSubview(label("Group RAM is the sum of member footprints. Roles are inferred from executable names/paths; Server / CLI includes standalone Codex. " +
+                                      "Age is since OS process start; group age is its root process. Paused/exited rows retain their last observed age. " +
+                                      "Gaps mean missing data; short spikes may be missed."))
 
         stack.addArrangedSubview(label("Default alert limits", bold: true))
         stack.addArrangedSubview(ruleRow("ChatGPT / Codex", budget: "assistantBudget", growth: "assistantGrowth"))
@@ -348,12 +365,14 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         selecting = false
         graph.points = value.history; graph.needsDisplay = true
         summary.stringValue = monitor.status
+        roleSummary.stringValue = monitor.roleStatus
         notifications.stringValue = monitor.notificationStatus
         chatSummary.isHidden = !monitor.configuration.linkChats
         chatSummary.stringValue = monitor.configuration.linkChats ? chatSummaryText() : ""
         selectedChat.isHidden = !monitor.configuration.linkChats
         if let row = selectedRow() {
-            selectedTitle.stringValue = "\(row.name) · PID \(row.pid) · one-hour history"
+            let age = "\(row.isGroup ? "root age" : "age") \(ProcessAge.label(row.age))"
+            selectedTitle.stringValue = "\(row.name) · PID \(row.pid) · \(row.role.rawValue) · \(age) · one-hour history"
             selectedChat.stringValue = monitor.configuration.linkChats ? "Chat: \(row.chat?.label ?? "Shared / unlinked") · Current tag; graph is process history." : ""
             let rule = monitor.configuration.overrides[row.key] ?? monitor.configuration.rule(for: row.kind)
             if !inspectorDirty && !(window?.firstResponder is NSTextView) {
@@ -365,12 +384,17 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         } else { selectedTitle.stringValue = "No matching processes; sampling continues"; selectedChat.stringValue = ""; apply.isEnabled = false }
     }
     private func chatSummaryText() -> String {
+        guard monitor.isSampling else { return monitor.chatStatus }
         let usage = monitor.chatUsage
+        let coverage = CodexChatCoverage(usage)
         func memory(_ total: CodexChatTotal) -> String {
             if total.missing == total.processes && total.missing > 0 { return "Unavailable" }
             return ProcessesMonitor.memory(total.bytes) + (total.missing > 0 ? " + unknown" : "")
         }
-        var lines = [monitor.chatStatus]
+        let percent = coverage.memoryPercent.map { String(format: "%.1f%% of measured RAM linked", $0) } ?? "RAM coverage unavailable"
+        var lines = ["Chat attribution · \(percent) · \(coverage.linkedProcesses)/\(coverage.processes) observed processes linked"]
+        if coverage.missing > 0 { lines.append("Partial readings: \(coverage.missing) process(es) without a usable footprint; RAM percentage covers known bytes only.") }
+        lines.append(monitor.chatStatus)
         if usage.linked.isEmpty { lines.append("No tagged task processes found in this sample.") }
         for total in usage.linked.prefix(8) { lines.append("\(total.chat?.label ?? "Chat"): \(memory(total)) · \(total.processes) process(es)") }
         if usage.linked.count > 8 { lines.append("\(usage.linked.count - 8) additional linked chats; inspect the process rows.") }
@@ -387,13 +411,20 @@ final class ProcessesView: NSStackView, NSOutlineViewDataSource, NSOutlineViewDe
         cell.lineBreakMode = .byTruncatingTail
         switch column.identifier.rawValue {
         case "name": cell.stringValue = "\(row.name) [\(row.pid)]"
+        case "role": cell.stringValue = row.role.rawValue
+        case "age": cell.stringValue = ProcessAge.label(row.age)
         case "chat": cell.stringValue = monitor.configuration.linkChats ? row.chat?.label ?? (row.isGroup ? "Shared / unlinked" : "Unlinked") : "Off"
         case "ram": cell.stringValue = row.current.map(ProcessesMonitor.memory) ?? "—"
         case "peak": cell.stringValue = ProcessesMonitor.memory(row.peak)
         case "growth": cell.stringValue = row.growth.map { String(format: "%+.2f GB", $0 / 1073741824) } ?? "—"
         default: cell.stringValue = row.status
         }
-        cell.toolTip = column.identifier.rawValue == "chat" && row.chat != nil ? "\(cell.stringValue) · \(row.chat?.id ?? "") · Local process tag; shared app memory excluded." : cell.stringValue
+        cell.setAccessibilityLabel("\(column.title): \(cell.stringValue)")
+        if column.identifier.rawValue == "age" {
+            cell.toolTip = "Since OS process start; group uses its root process. Last observed age while paused or exited."
+        } else if column.identifier.rawValue == "chat", let chat = row.chat {
+            cell.toolTip = "\(cell.stringValue) · \(chat.id) · Local process tag; shared app memory excluded."
+        } else { cell.toolTip = cell.stringValue }
         return cell
     }
     func outlineViewSelectionDidChange(_ notification: Notification) {

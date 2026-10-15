@@ -15,6 +15,35 @@ struct WatchedProcess {
     let assistantAffinity: Bool
     var footprint: UInt64?
     var chat: CodexChatOwnership? = nil
+    var role: ProcessRole = .other
+}
+
+enum ProcessRole: String, CaseIterable {
+    case application = "App", renderer = "Renderer", server = "Server / CLI", helper = "Helper", job = "Local job", other = "Other", group = "Group"
+    static func identify(name: String, path: String, assistant: Bool) -> ProcessRole {
+        if assistant && (path.hasSuffix("/ChatGPT.app/Contents/MacOS/ChatGPT") || path.hasSuffix("/Codex.app/Contents/MacOS/Codex")) { return .application }
+        if assistant && name.lowercased().contains("(renderer)") { return .renderer }
+        if name.lowercased() == "codex" { return .server }
+        if assistant { return .helper }
+        return ProcessGrouping.isBuildName(name) ? .job : .other
+    }
+}
+
+struct ProcessAge {
+    static func seconds(_ id: WatchedProcessID, wallTime: TimeInterval) -> TimeInterval? {
+        guard id.startSeconds > 0, id.startMicroseconds < 1_000_000, wallTime.isFinite else { return nil }
+        let start = Double(id.startSeconds) + Double(id.startMicroseconds) / 1_000_000
+        guard start <= wallTime else { return nil }
+        return wallTime - start
+    }
+    static func label(_ seconds: TimeInterval?) -> String {
+        guard let seconds, seconds.isFinite, seconds >= 0, seconds < Double(Int.max) else { return "—" }
+        let whole = Int(seconds)
+        if whole < 60 { return "\(whole)s" }
+        if whole < 3600 { return "\(whole / 60)m" }
+        if whole < 86400 { return "\(whole / 3600)h \(whole % 3600 / 60)m" }
+        return "\(whole / 86400)d \(whole % 86400 / 3600)h"
+    }
 }
 
 enum ProcessWatchKind: String, Codable { case assistant, job }
@@ -89,8 +118,11 @@ struct ProcessGrouping {
         "rustc", "npm", "esbuild", "tsc", "webpack", "rollup", "vite", "java", "gradle"
     ]
     static func isBuildTool(_ p: WatchedProcess) -> Bool {
-        let name = p.name.lowercased()
-        return !p.assistantAffinity && (buildNames.contains(name) || name.hasPrefix("python3.") || name.hasPrefix("pypy3"))
+        !p.assistantAffinity && isBuildName(p.name)
+    }
+    static func isBuildName(_ value: String) -> Bool {
+        let name = value.lowercased()
+        return buildNames.contains(name) || name.hasPrefix("python3.") || name.hasPrefix("pypy3")
     }
     static func groups(_ processes: [WatchedProcess]) -> [WatchedProcessGroup] {
         let byPID = Dictionary(processes.map { ($0.id.pid, $0) }, uniquingKeysWith: { a, b in a.id.startSeconds > b.id.startSeconds ? a : b })
@@ -140,8 +172,11 @@ final class ProcessMemoryRow: NSObject {
     let status: String
     let children: [ProcessMemoryRow]
     let chat: CodexChatOwnership?
+    let role: ProcessRole
+    let age: TimeInterval?
     init(key: String, name: String, pid: Int32, kind: ProcessWatchKind, isGroup: Bool,
-         current: UInt64?, peak: UInt64, growth: Double?, status: String, children: [ProcessMemoryRow] = [], chat: CodexChatOwnership? = nil) {
+         current: UInt64?, peak: UInt64, growth: Double?, status: String, children: [ProcessMemoryRow] = [], chat: CodexChatOwnership? = nil, role: ProcessRole = .other, age: TimeInterval? = nil) {
+        self.role = role; self.age = age
         self.key = key; self.name = name; self.pid = pid; self.kind = kind; self.isGroup = isGroup
         self.current = current; self.peak = peak; self.growth = growth; self.status = status; self.children = children; self.chat = chat
     }
@@ -171,6 +206,8 @@ private final class ProcessMemorySeries {
     let isGroup: Bool
     var parent: String?
     var chat: CodexChatOwnership?
+    var role: ProcessRole = .other
+    var age: TimeInterval?
     var current: UInt64?
     var peak: UInt64 = 0
     var growth: Double?
@@ -212,6 +249,8 @@ private struct SeriesDescriptor {
     let isGroup: Bool
     let parent: String?
     var chat: CodexChatOwnership? = nil
+    var role: ProcessRole = .other
+    var age: TimeInterval? = nil
 }
 
 final class ProcessesEngine {
@@ -225,12 +264,15 @@ final class ProcessesEngine {
         if !configuration.linkChats { series.values.forEach { $0.chat = nil } }
         series.values.forEach { $0.resetAlert() }
     }
-    func update(_ groups: [WatchedProcessGroup], complete: Bool, time: TimeInterval, unknownPIDs: Set<Int32> = []) -> ProcessesSnapshot {
+    func update(_ groups: [WatchedProcessGroup], complete: Bool, time: TimeInterval, unknownPIDs: Set<Int32> = [], wallTime: TimeInterval = Date().timeIntervalSince1970) -> ProcessesSnapshot {
         series = series.filter { time - $0.value.lastSeen <= 3600 }
         var present: Set<String> = []
         var events: [ProcessMemoryAlert] = []
         for group in groups.prefix(Self.maxGroups) {
-            let s = obtain(SeriesDescriptor(key: group.key, name: group.title, pid: group.root.id.pid, kind: group.kind, isGroup: true, parent: nil, chat: group.chat), time: time)
+            let descriptor = SeriesDescriptor(key: group.key, name: group.title, pid: group.root.id.pid, kind: group.kind,
+                                              isGroup: true, parent: nil, chat: group.chat, role: .group,
+                                              age: ProcessAge.seconds(group.root.id, wallTime: wallTime))
+            let s = obtain(descriptor, time: time)
             guard let s else { continue }
             present.insert(s.key); s.lastSeen = time
             let missingMember = series.values.contains { $0.parent == group.key && unknownPIDs.contains($0.pid) }
@@ -240,7 +282,8 @@ final class ProcessesEngine {
             for member in group.members {
                 let key = "process:\(member.id.key)"
                 guard let child = obtain(SeriesDescriptor(key: key, name: member.name, pid: member.id.pid, kind: group.kind,
-                                                         isGroup: false, parent: group.key, chat: member.chat), time: time) else { continue }
+                                                         isGroup: false, parent: group.key, chat: member.chat, role: member.role,
+                                                         age: ProcessAge.seconds(member.id, wallTime: wallTime)), time: time) else { continue }
                 present.insert(key); child.lastSeen = time; child.parent = group.key
                 let bytes = complete ? member.footprint : nil
                 child.sample(bytes, status: !complete || bytes == nil ? "Unavailable" : "Live", time: time)
@@ -262,13 +305,18 @@ final class ProcessesEngine {
     }
     private func obtain(_ descriptor: SeriesDescriptor, time: TimeInterval) -> ProcessMemorySeries? {
         let key = descriptor.key
-        if let s = series[key] { s.name = descriptor.name; s.chat = configuration.linkChats ? descriptor.chat : nil; return s }
+        if let s = series[key] {
+            s.name = descriptor.name; s.chat = configuration.linkChats ? descriptor.chat : nil
+            s.role = descriptor.role; s.age = descriptor.age
+            return s
+        }
         if series.count >= Self.maxSeries {
             if let oldest = series.values.filter({ $0.current == nil }).min(by: { $0.lastSeen < $1.lastSeen }) { series.removeValue(forKey: oldest.key) } else { return nil }
         }
         let s = ProcessMemorySeries(key: key, name: descriptor.name, pid: descriptor.pid, kind: descriptor.kind,
                                     isGroup: descriptor.isGroup, parent: descriptor.parent, time: time)
         s.chat = configuration.linkChats ? descriptor.chat : nil
+        s.role = descriptor.role; s.age = descriptor.age
         series[key] = s
         return s
     }
@@ -293,7 +341,7 @@ final class ProcessesEngine {
     func snapshot() -> ProcessesSnapshot {
         func row(_ s: ProcessMemorySeries, children: [ProcessMemoryRow] = []) -> ProcessMemoryRow {
             ProcessMemoryRow(key: s.key, name: s.name, pid: s.pid, kind: s.kind, isGroup: s.isGroup,
-                             current: s.current, peak: s.peak, growth: s.growth, status: s.status, children: children, chat: s.chat)
+                             current: s.current, peak: s.peak, growth: s.growth, status: s.status, children: children, chat: s.chat, role: s.role, age: s.age)
         }
         let groups = series.values.filter { $0.isGroup }.sorted {
             if ($0.current != nil) != ($1.current != nil) { return $0.current != nil }

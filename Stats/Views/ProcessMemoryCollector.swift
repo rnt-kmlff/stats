@@ -35,7 +35,8 @@ struct ProcessMemoryCollector {
             let app = path.split(separator: "/").first(where: { $0.hasSuffix(".app") })?.lowercased()
             let assistant = app == "chatgpt.app" || app == "codex.app" || name.lowercased() == "codex"
             records.append(WatchedProcess(id: WatchedProcessID(pid: pid, startSeconds: info.pbi_start_tvsec, startMicroseconds: info.pbi_start_tvusec),
-                                          parentPID: Int32(clamping: info.pbi_ppid), name: String(name.prefix(80)), assistantAffinity: assistant, footprint: nil))
+                                          parentPID: Int32(clamping: info.pbi_ppid), name: String(name.prefix(80)), assistantAffinity: assistant, footprint: nil,
+                                          role: ProcessRole.identify(name: name, path: path, assistant: assistant)))
         }
         let candidates = ProcessGrouping.groups(records)
         let selected = Array(candidates.prefix(ProcessesEngine.maxGroups))
