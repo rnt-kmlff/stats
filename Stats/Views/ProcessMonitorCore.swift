@@ -111,6 +111,26 @@ struct WatchedProcessGroup {
     }
 }
 
+struct AssistantMemoryTotal {
+    let bytes: UInt64?
+    let partial: Bool
+    static func summarize(_ groups: [WatchedProcessGroup], complete: Bool, limited: Bool, unknown: Bool) -> AssistantMemoryTotal {
+        guard complete else { return AssistantMemoryTotal(bytes: nil, partial: true) }
+        let members = CodexChatUsage.uniqueProcesses(groups.filter { $0.kind == .assistant }.flatMap { $0.members })
+        var bytes: UInt64 = 0
+        var measured = 0
+        var partial = limited || unknown
+        for process in members {
+            guard let footprint = process.footprint else { partial = true; continue }
+            let (sum, overflow) = bytes.addingReportingOverflow(footprint)
+            guard !overflow else { return AssistantMemoryTotal(bytes: nil, partial: true) }
+            bytes = sum; measured += 1
+        }
+        if measured == 0 && (!members.isEmpty || partial) { return AssistantMemoryTotal(bytes: nil, partial: true) }
+        return AssistantMemoryTotal(bytes: bytes, partial: partial)
+    }
+}
+
 struct ProcessGrouping {
     static let buildNames: Set<String> = [
         "node", "bun", "deno", "python", "python3", "pypy", "swift", "swift-frontend", "swiftc",

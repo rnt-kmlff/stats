@@ -54,7 +54,12 @@ final class ProcessesMonitor {
             self.timer = timer; timer.resume()
         }
     }
-    func stop() { queue.async { [weak self] in self?.timer?.cancel(); self?.timer = nil } }
+    func stop() {
+        queue.async { [weak self] in
+            self?.timer?.cancel(); self?.timer = nil
+            AssistantMemoryStore.shared.publish(bytes: nil, status: .off)
+        }
+    }
     func setConfiguration(_ newValue: ProcessesConfiguration) {
         let value = newValue.validated()
         configuration = value; generation += 1
@@ -73,12 +78,15 @@ final class ProcessesMonitor {
     private func tick() {
         let time = ProcessInfo.processInfo.systemUptime
         guard engine.configuration.enabled, !workerPaused, !sleeping else {
+            AssistantMemoryStore.shared.publish(bytes: nil, status: sleeping ? .sleeping : workerPaused ? .paused : .off, time: time)
             publish(engine.pause(time: time), status: sleeping ? "Sleeping" : workerPaused ? "Paused with Stats" : "Monitoring off",
                     chatUsage: CodexChatUsage(linked: [], unlinked: CodexChatTotal(chat: nil)), chatStatus: "Chat readings paused",
                     roleStatus: "Role readings paused", isSampling: false)
             return
         }
         let scan = ProcessMemoryCollector.scan(linkChats: engine.configuration.linkChats)
+        let assistant = AssistantMemoryTotal.summarize(scan.groups, complete: scan.complete, limited: scan.limited, unknown: !scan.unknownPIDs.isEmpty)
+        AssistantMemoryStore.shared.publish(bytes: assistant.bytes, status: assistant.partial ? .partial : .live, time: time)
         var value = engine.update(scan.groups, complete: scan.complete, time: time, unknownPIDs: scan.unknownPIDs)
         value.limited = value.limited || scan.limited
         let sampled = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)

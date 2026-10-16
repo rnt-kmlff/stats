@@ -19,6 +19,7 @@ You can use a combination of any of the variables.
 <ul>
 <li>$mem.used/$mem.total ($pressure.value)</li>
 <li>Pressure: $pressure.value</li>
+<li>GPT $chatgpt.used · $swap.used</li>
 <li>Free: $mem.free</li>
 </ul>
 <h2>Available variables</h2>
@@ -34,6 +35,7 @@ You can use a combination of any of the variables.
 <li><b>$mem.cache</b>: <small>Cached RAM memory.</small></li>
 <li><b>$mem.swapins</b>: <small>The number of memory pages loaded in from virtual memory to physical memory.</small></li>
 <li><b>$mem.swapouts</b>: <small>The number of memory pages swapped out to physical memory from virtual memory.</small></li>
+<li><b>$chatgpt.used</b>: <small>Combined observed ChatGPT/Codex app-family memory from Processes. Separate local jobs are excluded. ~ means a partial sample; — means unavailable, paused, off or stale.</small></li>
 <li><b>$swap.total</b>: <small>Total swap memory.</small></li>
 <li><b>$swap.used</b>: <small>Used swap memory.</small></li>
 <li><b>$swap.free</b>: <small>Free swap memory.</small></li>
