@@ -13,6 +13,8 @@ import Cocoa
 
 public class TextWidget: WidgetWrapper {
     private var value: String = ""
+    private var template: String = ""
+    private var memoryObserver: NSObjectProtocol?
     private static let variableRegex = try? NSRegularExpression(pattern: "(\\$[a-zA-Z0-9_]+)(?:\\.([a-zA-Z0-9_]+))?")
     
     public init(title: String, preview: Bool = false) {
@@ -28,6 +30,14 @@ public class TextWidget: WidgetWrapper {
         }
         
         self.canDrawConcurrently = true
+        self.memoryObserver = NotificationCenter.default.addObserver(forName: AssistantMemoryStore.didChange, object: AssistantMemoryStore.shared, queue: .main) { [weak self] _ in
+            guard let self, self.queue.sync(execute: { AssistantMemoryTemplate.contains(self.template) }) else { return }
+            self.refreshValue()
+        }
+    }
+
+    deinit {
+        if let memoryObserver { NotificationCenter.default.removeObserver(memoryObserver) }
     }
     
     required public init?(coder: NSCoder) {
@@ -69,17 +79,34 @@ public class TextWidget: WidgetWrapper {
     }
     
     public func setValue(_ newValue: String) {
+        self.queue.sync { self.template = newValue }
+        DispatchQueue.main.async { [weak self] in self?.refreshValue() }
+    }
+
+    // Called on the main queue, including when process sampling pauses while RAM readers stop.
+    private func refreshValue() {
+        var text = self.queue.sync { self.template }
+        var help: String?
+        if AssistantMemoryTemplate.contains(text) {
+            let sample = AssistantMemoryStore.shared.current()
+            let memory = sample.text { Units(bytes: Int64(clamping: $0)).getReadableMemory(style: .memory) }
+            text = AssistantMemoryTemplate.render(text, value: memory)
+            help = "ChatGPT / Codex: " + memory + " · " + sample.status.rawValue +
+                ". Sum of observed app-family process footprints; separate local-job groups are excluded. This is app memory, not per-chat allocation."
+        }
+        self.toolTip = help
+        self.setAccessibilityElement(true)
+        self.setAccessibilityRole(.staticText)
+        self.setAccessibilityLabel(text)
+        self.setAccessibilityHelp(help)
         let updated = self.queue.sync { () -> Bool in
-            guard self.value != newValue else { return false }
-            self.value = newValue
+            guard self.value != text else { return false }
+            self.value = text
             return true
         }
-        guard updated else { return }
-        DispatchQueue.main.async(execute: {
-            self.needsDisplay = true
-        })
+        if updated { self.needsDisplay = true }
     }
-    
+
     static public func parseText(_ raw: String) -> [KeyValue_t] {
         var pairs: [KeyValue_t] = []
         guard let regex = TextWidget.variableRegex else { return pairs }

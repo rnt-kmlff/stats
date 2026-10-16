@@ -235,7 +235,15 @@ public class RAM: Module {
                     }
                 }
                 widget.setValue(text)
-            case let widget as DotWidget: widget.setValue(value.pressure.value.pressureColor())
+            case let widget as DotWidget:
+                widget.setValue(value.pressure.value.pressureColor())
+                DispatchQueue.main.async {
+                    let label = "Memory pressure: " + value.pressure.value.rawValue
+                    widget.toolTip = label
+                    widget.setAccessibilityElement(true)
+                    widget.setAccessibilityRole(.image)
+                    widget.setAccessibilityLabel(label)
+                }
             default: break
             }
         }

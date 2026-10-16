@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        A17C00012610160000000001 /* AssistantMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17C00012610160000000002 /* AssistantMemory.swift */; };
 		F01300000000000000000104 /* CodexChatAttribution.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000004 /* CodexChatAttribution.swift */; };
 		F01300000000000000000103 /* CodexChatAttributionCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000003 /* CodexChatAttributionCore.swift */; };
 		F01300000000000000000102 /* ProcessesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01300000000000000000002 /* ProcessesView.swift */; };
@@ -539,6 +540,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        A17C00012610160000000002 /* AssistantMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantMemory.swift; sourceTree = "<group>"; };
 		F01300000000000000000004 /* CodexChatAttribution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexChatAttribution.swift; sourceTree = "<group>"; };
 		F01300000000000000000003 /* CodexChatAttributionCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexChatAttributionCore.swift; sourceTree = "<group>"; };
 		F01300000000000000000002 /* ProcessesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessesView.swift; sourceTree = "<group>"; };
@@ -1115,6 +1117,7 @@
 				9A28481A2666AB3500EC1F6D /* extensions.swift */,
 				9A28481D2666AB3600EC1F6D /* helpers.swift */,
 				9A28481C2666AB3500EC1F6D /* types.swift */,
+                A17C00012610160000000002 /* AssistantMemory.swift */,
 				5C621D812B4770D6004ED7AF /* process.swift */,
 			);
 			path = Kit;
@@ -2262,6 +2265,7 @@
 				9A28477B2666AA5000EC1F6D /* popup.swift in Sources */,
 				5C038CF62D86EE8A00516809 /* SystemStats.swift in Sources */,
 				9A2848202666AB3600EC1F6D /* types.swift in Sources */,
+                A17C00012610160000000001 /* AssistantMemory.swift in Sources */,
 				9A28481E2666AB3600EC1F6D /* extensions.swift in Sources */,
 				9A2848092666AB3000EC1F6D /* Store.swift in Sources */,
 				9A28481F2666AB3600EC1F6D /* constants.swift in Sources */,
